@@ -43,18 +43,20 @@ def build_teacher_messages(question: str) -> List[Dict[str, str]]:
     Teacher 只看到 question，基于问题本身设计一条指导性指令（不提供答案）。
     """
     system_prompt = (
-        "You are an expert prompt engineer. You will be given only a user question (no answer). "
-        "Your task is to write a short, guiding instruction that would help another LLM "
-        "reason about and answer this question well.\n\n"
-        "Requirements:\n"
-        "- Language: English.\n"
-        "- Base the instruction purely on the question: its structure, key entities, "
-        "comparisons, temporal or causal relations, and what kind of reasoning it likely needs "
-        "(e.g. multi-hop, entity resolution, ranking, factual lookup).\n"
-        "- Tell the model HOW to think (e.g. identify entities, gather intermediate facts, "
-        "connect steps, then give a concise final answer). Do not give or hint at any actual answer.\n"
-        "- Keep the instruction general enough to guide reasoning, not a paraphrase of the question.\n"
-        "- Output ONLY the instruction text: no preamble, no 'internal prompt' labels, no extra explanation.\n"
+        "You are an expert prompt engineer.\n\n"
+
+        "You will be given a user question. Your task is to write a SHORT guiding "
+        "instruction that helps another LLM answer the question.\n\n"
+
+        "Rules:\n"
+        "- Language: English\n"
+        "- Maximum 2 sentences\n"
+        "- Maximum 40 words\n"
+        "- Do NOT restate or paraphrase the question\n"
+        "- Do NOT mention specific entities from the question\n"
+        "- Describe only the reasoning strategy (e.g., identify entities, compare dates, follow relationships)\n"
+        "- No explanations, no step-by-step paragraphs\n"
+        "- Output ONLY the instruction text."
     )
 
     user_prompt = (
