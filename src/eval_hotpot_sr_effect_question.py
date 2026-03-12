@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
         "--result_file",
         type=str,
         default=None,
-        help="将每条样本的详细评测结果（包含模型输出）保存为 JSONL 的路径。",
+        help="将每条样本的详细评测结果（包含模型输出）保存为 JSON 的路径。",
     )
     return parser.parse_args()
 
@@ -205,58 +205,90 @@ def main() -> None:
     examples = []
     disagreements = []
 
-    # 准备逐条结果输出文件
+    # 准备逐条结果输出文件（JSON 格式，含 meta 元信息）
     result_path: Path
     if args.result_file:
         result_path = Path(args.result_file)
     else:
         data_stem = Path(args.data_file).stem
         model_name_safe = args.model.split("/")[-1]
-        result_path = Path("eval") / f"{data_stem}_eval_{model_name_safe}.jsonl"
+        result_path = Path("eval") / f"{data_stem}_eval_{model_name_safe}.json"
     result_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with result_path.open("w", encoding="utf-8") as fw:
-        for r in results:
-            idx, ok_direct, ok_sr, pred_direct, pred_sr, sample = r
-
-            # 写入逐条评测结果（包含两种 prompt 下的完整输出）
-            record = {
-                "idx": idx,
-                "user": sample["user"],
-                "sr_prompt": sample["sr_prompt"],
-                "gold": sample["answer"],
-                "pred_direct": pred_direct,
-                "pred_sr": pred_sr,
-                "ok_direct": ok_direct,
-                "ok_sr": ok_sr,
-            }
-            fw.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-            if ok_direct != ok_sr:
-                disagreements.append(
-                    {
-                        "user": sample["user"],
-                        "gold": sample["answer"],
-                        "pred_direct": pred_direct,
-                        "pred_sr": pred_sr,
-                        "ok_direct": ok_direct,
-                        "ok_sr": ok_sr,
-                    }
-                )
-            if idx <= 5:
-                examples.append(
-                    {
-                        "user": sample["user"],
-                        "gold": sample["answer"],
-                        "pred_direct": pred_direct,
-                        "pred_sr": pred_sr,
-                        "ok_direct": ok_direct,
-                        "ok_sr": ok_sr,
-                    }
-                )
+    # 计算四象限统计
+    both_correct = sum(1 for r in results if r[1] and r[2])
+    both_wrong = sum(1 for r in results if not r[1] and not r[2])
+    misleading = sum(1 for r in results if r[1] and not r[2])
+    corrected = sum(1 for r in results if not r[1] and r[2])
 
     direct_acc = direct_correct / total
     sr_acc = sr_correct / total
+
+    meta = {
+        "total": total,
+        "direct_correct": direct_correct,
+        "direct_accuracy": round(direct_acc, 4),
+        "sr_correct": sr_correct,
+        "sr_accuracy": round(sr_acc, 4),
+        "both_correct": both_correct,
+        "both_correct_pct": round(both_correct / total, 4),
+        "both_wrong": both_wrong,
+        "both_wrong_pct": round(both_wrong / total, 4),
+        "misleading": misleading,
+        "misleading_pct": round(misleading / total, 4),
+        "corrected": corrected,
+        "corrected_pct": round(corrected / total, 4),
+    }
+
+    def quadrant_label(ok_d: bool, ok_s: bool) -> str:
+        if ok_d and ok_s:
+            return "both_correct"
+        if not ok_d and not ok_s:
+            return "both_wrong"
+        if ok_d and not ok_s:
+            return "misleading"
+        return "corrected"
+
+    records = []
+    for r in results:
+        idx, ok_direct, ok_sr, pred_direct, pred_sr, sample = r
+        records.append({
+            "idx": idx,
+            "user": sample["user"],
+            "sr_prompt": sample["sr_prompt"],
+            "gold": sample["answer"],
+            "pred_direct": pred_direct,
+            "pred_sr": pred_sr,
+            "ok_direct": ok_direct,
+            "ok_sr": ok_sr,
+            "quadrant": quadrant_label(ok_direct, ok_sr),
+        })
+        if ok_direct != ok_sr:
+            disagreements.append(
+                {
+                    "user": sample["user"],
+                    "gold": sample["answer"],
+                    "pred_direct": pred_direct,
+                    "pred_sr": pred_sr,
+                    "ok_direct": ok_direct,
+                    "ok_sr": ok_sr,
+                }
+            )
+        if idx <= 5:
+            examples.append(
+                {
+                    "user": sample["user"],
+                    "gold": sample["answer"],
+                    "pred_direct": pred_direct,
+                    "pred_sr": pred_sr,
+                    "ok_direct": ok_direct,
+                    "ok_sr": ok_sr,
+                }
+            )
+
+    output = {"meta": meta, "records": records}
+    with result_path.open("w", encoding="utf-8") as fw:
+        json.dump(output, fw, ensure_ascii=False, indent=2)
 
     print("\n===== 结果汇总 =====")
     print(f"总样本数: {total}")
