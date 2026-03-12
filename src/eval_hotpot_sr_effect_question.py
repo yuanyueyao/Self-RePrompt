@@ -1,6 +1,7 @@
 """
-对比：原始问题 vs 改写后问题（sr_prompt）作为 user 消息的准确率。
-用于 data/reprompt_question 数据：无系统提示，direct=仅原始问题作 user，sr=仅 sr_prompt（改写问题）作 user。
+对比：仅 user 作为 prompt vs user+sr_prompt 拼接作为 prompt 的准确率。
+用于 data/reprompt_reason/hotpot_train_qa_2000_reprompt.jsonl：消息只包含 user 角色，
+direct=仅 user 字段作 prompt，sr=user 字段 + sr_prompt 字段拼接作 prompt。
 """
 import argparse
 import json
@@ -15,7 +16,7 @@ from openai import OpenAI
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="对比：原始问题 vs 改写问题(sr_prompt) 作为 user 消息的准确率（无 system 提示）。"
+        description="对比：仅 user vs user+sr_prompt 拼接作为 user 消息的准确率（无 system）。"
     )
     parser.add_argument(
         "--model",
@@ -26,19 +27,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_file",
         type=str,
-        default="data/reprompt_question/hotpot_train_qa_2000_reprompt_v0_rewrite_question.jsonl",
-        help="包含 {user, sr_prompt, answer} 的 JSONL 文件路径（reprompt_question 数据）。",
+        default="data/reprompt_reason/hotpot_train_qa_2000_reprompt.jsonl",
+        help="包含 {user, sr_prompt, answer} 的 JSONL 文件路径。",
     )
     parser.add_argument(
         "--max_samples",
         type=int,
-        default=100,
+        default=30,
         help="最多评测多少条样本。",
     )
     parser.add_argument(
         "--max_new_tokens",
         type=int,
-        default=150,
+        default=350,
         help="每条样本生成的最大 new tokens。",
     )
     parser.add_argument(
@@ -46,6 +47,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=8,
         help="并行请求的线程数。",
+    )
+    parser.add_argument(
+        "--result_file",
+        type=str,
+        default=None,
+        help="将每条样本的详细评测结果（包含模型输出）保存为 JSONL 的路径。",
     )
     return parser.parse_args()
 
@@ -115,13 +122,14 @@ def generate_answer_api(
 
 
 def build_messages_direct(user: str) -> List[Dict[str, str]]:
-    """无系统提示，仅原始问题作为 user 消息。"""
+    """消息只包含 user，prompt 为数据里的 user 字段。"""
     return [{"role": "user", "content": user}]
 
 
 def build_messages_with_sr(user: str, sr_prompt: str) -> List[Dict[str, str]]:
-    """无系统提示，仅将 sr_prompt（改写后的问题）作为 user 消息。"""
-    return [{"role": "user", "content": sr_prompt}]
+    """消息只包含 user，prompt 为数据里的 user 字段 + sr_prompt 字段拼接。"""
+    prompt = f"{user}\n\n{sr_prompt}"
+    return [{"role": "user", "content": prompt}]
 
 
 def eval_once(
@@ -196,48 +204,75 @@ def main() -> None:
 
     examples = []
     disagreements = []
-    for r in results:
-        idx, ok_direct, ok_sr, pred_direct, pred_sr, sample = r
-        if ok_direct != ok_sr:
-            disagreements.append(
-                {
-                    "user": sample["user"],
-                    "gold": sample["answer"],
-                    "pred_direct": pred_direct,
-                    "pred_sr": pred_sr,
-                    "ok_direct": ok_direct,
-                    "ok_sr": ok_sr,
-                }
-            )
-        if idx <= 5:
-            examples.append(
-                {
-                    "user": sample["user"],
-                    "gold": sample["answer"],
-                    "pred_direct": pred_direct,
-                    "pred_sr": pred_sr,
-                    "ok_direct": ok_direct,
-                    "ok_sr": ok_sr,
-                }
-            )
+
+    # 准备逐条结果输出文件
+    result_path: Path
+    if args.result_file:
+        result_path = Path(args.result_file)
+    else:
+        data_stem = Path(args.data_file).stem
+        model_name_safe = args.model.split("/")[-1]
+        result_path = Path("eval") / f"{data_stem}_eval_{model_name_safe}.jsonl"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with result_path.open("w", encoding="utf-8") as fw:
+        for r in results:
+            idx, ok_direct, ok_sr, pred_direct, pred_sr, sample = r
+
+            # 写入逐条评测结果（包含两种 prompt 下的完整输出）
+            record = {
+                "idx": idx,
+                "user": sample["user"],
+                "sr_prompt": sample["sr_prompt"],
+                "gold": sample["answer"],
+                "pred_direct": pred_direct,
+                "pred_sr": pred_sr,
+                "ok_direct": ok_direct,
+                "ok_sr": ok_sr,
+            }
+            fw.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+            if ok_direct != ok_sr:
+                disagreements.append(
+                    {
+                        "user": sample["user"],
+                        "gold": sample["answer"],
+                        "pred_direct": pred_direct,
+                        "pred_sr": pred_sr,
+                        "ok_direct": ok_direct,
+                        "ok_sr": ok_sr,
+                    }
+                )
+            if idx <= 5:
+                examples.append(
+                    {
+                        "user": sample["user"],
+                        "gold": sample["answer"],
+                        "pred_direct": pred_direct,
+                        "pred_sr": pred_sr,
+                        "ok_direct": ok_direct,
+                        "ok_sr": ok_sr,
+                    }
+                )
 
     direct_acc = direct_correct / total
     sr_acc = sr_correct / total
 
     print("\n===== 结果汇总 =====")
     print(f"总样本数: {total}")
-    print(f"原始问题(user) 准确条数: {direct_correct}  准确率: {direct_acc:.3f}")
-    print(f"改写问题(sr_prompt as user) 准确条数: {sr_correct}  准确率: {sr_acc:.3f}")
+    print(f"仅 user 准确条数: {direct_correct}  准确率: {direct_acc:.3f}")
+    print(f"user+sr_prompt 拼接 准确条数: {sr_correct}  准确率: {sr_acc:.3f}")
+    print(f"\n逐条评测结果已保存至: {result_path}")
 
     print("\n===== 前几条示例（便于人工检查） =====")
     for i, ex in enumerate(examples, start=1):
         print(f"\n--- 样本 {i} ---")
-        print(f"Q(原始): {ex['user']}")
+        print(f"Q(user): {ex['user']}")
         print(f"Gold: {ex['gold']}")
-        print(f"[原始问题]  pred: {ex['pred_direct']!r}  ok={ex['ok_direct']}")
-        print(f"[改写问题] pred: {ex['pred_sr']!r}  ok={ex['ok_sr']}")
+        print(f"[仅user]         pred: {ex['pred_direct']!r}  ok={ex['ok_direct']}")
+        print(f"[user+sr_prompt] pred: {ex['pred_sr']!r}  ok={ex['ok_sr']}")
 
-    print("\n===== 结果不一致的样本（原始问题 vs 改写问题） =====")
+    print("\n===== 结果不一致的样本（仅 user vs user+sr_prompt） =====")
     if not disagreements:
         print("两种方式在所有样本上的对错完全一致。")
     else:
@@ -245,8 +280,8 @@ def main() -> None:
             print(f"\n*** 不一致样本 {i} ***")
             print(f"Q: {ex['user']}")
             print(f"Gold: {ex['gold']}")
-            print(f"[原始问题]  pred: {ex['pred_direct']!r}  ok={ex['ok_direct']}")
-            print(f"[改写问题] pred: {ex['pred_sr']!r}  ok={ex['ok_sr']}")
+            print(f"[仅user]         pred: {ex['pred_direct']!r}  ok={ex['ok_direct']}")
+            print(f"[user+sr_prompt] pred: {ex['pred_sr']!r}  ok={ex['ok_sr']}")
 
 
 if __name__ == "__main__":

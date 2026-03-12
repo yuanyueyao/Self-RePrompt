@@ -12,15 +12,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=str,
-        required=True,
-        default="data/hotpot_train_qa_2000.jsonl",
+        required=False,
+        default="data/raw/hotpot_train_qa_2000.json",
         help="输入 Hotpot QA JSON 文件路径，格式为 [{\"question\": ..., \"answer\": ...}, ...]。",
     )
     parser.add_argument(
         "--output",
         type=str,
-        required=True,
-        default="data/hotpot_train_qa_2000_reprompt_v2.jsonl",
+        required=False,
+        default="data/reprompt_reason/hotpot_train_qa_2000_reprompt.jsonl",
         help="输出 JSONL 文件路径，每行一个 {user, sr_prompt, answer}。",
     )
     parser.add_argument(
