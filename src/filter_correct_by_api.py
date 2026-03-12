@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="用 API 按 sr_prompt 生成回答，仅保留回答正确的条目。"

@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "total": 5,
+    "direct_correct": 0,
+    "direct_accuracy": 0.0,
+    "sr_correct": 0,
+    "sr_accuracy": 0.0,
+    "both_correct": 0,
+    "both_correct_pct": 0.0,
+    "both_wrong": 5,
+    "both_wrong_pct": 1.0,
+    "misleading": 0,
+    "misleading_pct": 0.0,
+    "corrected": 0,
+    "corrected_pct": 0.0
+  },
+  "records": [
+    {
+      "idx": 1,
+      "user": "Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?",
+      "sr_prompt": "Find the May quantity as half of April's, then add both months together.",
+      "gold": "72",
+      "pred_direct": "",
+      "pred_sr": "",
+      "ok_direct": false,
+      "ok_sr": false,
+      "quadrant": "both_wrong"
+    },
+    {
+      "idx": 2,
+      "user": "Weng earns $12 an hour for babysitting. Yesterday, she just did 50 minutes of babysitting. How much did she earn?",
+      "sr_prompt": "Convert the hourly rate to a per-minute rate, then multiply by the minutes worked.",
+      "gold": "10",
+      "pred_direct": "",
+      "pred_sr": "",
+      "ok_direct": false,
+      "ok_sr": false,
+      "quadrant": "both_wrong"
+    },
+    {
+      "idx": 3,
+      "user": "Betty is saving money for a new wallet which costs $100. Betty has only half of the money she needs. Her parents decided to give her $15 for that purpose, and her grandparents twice as much as her parents. How much more money does Betty need to buy the wallet?",
+      "sr_prompt": "Calculate Betty's current total by adding her initial amount and both gifts, then subtract from the total cost.",
+      "gold": "5",
+      "pred_direct": "",
+      "pred_sr": "",
+      "ok_direct": false,
+      "ok_sr": false,
+      "quadrant": "both_wrong"
+    },
+    {
+      "idx": 4,
+      "user": "Julie is reading a 120-page book. Yesterday, she was able to read 12 pages and today, she read twice as many pages as yesterday. If she wants to read half of the remaining pages tomorrow, how many pages should she read?",
+      "sr_prompt": "Calculate today's pages from yesterday's, find total read, subtract from total pages, then take half of the remainder.",
+      "gold": "42",
+      "pred_direct": "",
+      "pred_sr": "",
+      "ok_direct": false,
+      "ok_sr": false,
+      "quadrant": "both_wrong"
+    },
+    {
+      "idx": 5,
+      "user": "James writes a 3-page letter to 2 different friends twice a week.  How many pages does he write a year?",
+      "sr_prompt": "Calculate total weekly pages for both friends, then multiply by the number of weeks in a year.",
+      "gold": "624",
+      "pred_direct": "",
+      "pred_sr": "",
+      "ok_direct": false,
+      "ok_sr": false,
+      "quadrant": "both_wrong"
+    }
+  ]
+}

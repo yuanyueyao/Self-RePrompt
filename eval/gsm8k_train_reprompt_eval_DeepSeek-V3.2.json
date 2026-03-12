@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "total": 5,
+    "direct_correct": 5,
+    "direct_accuracy": 1.0,
+    "sr_correct": 5,
+    "sr_accuracy": 1.0,
+    "both_correct": 5,
+    "both_correct_pct": 1.0,
+    "both_wrong": 0,
+    "both_wrong_pct": 0.0,
+    "misleading": 0,
+    "misleading_pct": 0.0,
+    "corrected": 0,
+    "corrected_pct": 0.0
+  },
+  "records": [
+    {
+      "idx": 1,
+      "user": "Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?",
+      "sr_prompt": "Find the May quantity as half of April's, then add both months together.",
+      "gold": "72",
+      "pred_direct": "Alright, let's go step-by-step.  \n\n---\n\n**Step 1: Clips sold in April**  \nNatalia sold clips to 48 friends in April.  \nSo, clips sold in April = \\( 48 \\).\n\n---\n\n**Step 2: Clips sold in May**  \nIn May, she sold **half as many clips** as in April.  \nHalf as many as April means:  \n\\[\n\\frac{1}{2} \\times 48 = 24\n\\]  \nSo, clips sold in May = \\( 24 \\).\n\n---\n\n**Step 3: Total clips sold in April and May**  \n\\[\n48 + 24 = 72\n\\]\n\n---\n\n**Final answer:**  \n\\[\n\\boxed{72}\n\\]",
+      "pred_sr": "Alright, let's go step-by-step.  \n\n**Step 1: Identify April’s sales**  \nNatalia sold clips to 48 friends in April.  \nSo, April sales = \\( 48 \\) clips.\n\n**Step 2: Find May’s sales**  \nShe sold *half as many clips in May* as in April.  \nHalf of April’s sales = \\( \\frac{1}{2} \\times 48 = 24 \\) clips.  \nSo, May sales = \\( 24 \\) clips.\n\n**Step 3: Add both months**  \nTotal clips sold in April and May:  \n\\[\n48 + 24 = 72\n\\]\n\n**Final answer:**  \n\\[\n\\boxed{72}\n\\]",
+      "ok_direct": true,
+      "ok_sr": true,
+      "quadrant": "both_correct"
+    },
+    {
+      "idx": 2,
+      "user": "Weng earns $12 an hour for babysitting. Yesterday, she just did 50 minutes of babysitting. How much did she earn?",
+      "sr_prompt": "Convert the hourly rate to a per-minute rate, then multiply by the minutes worked.",
+      "gold": "10",
+      "pred_direct": "Alright, let’s go step-by-step.  \n\n---\n\n**Step 1: Determine the hourly rate**  \nWeng earns \\( \\$12 \\) per hour.\n\n---\n\n**Step 2: Convert babysitting time to hours**  \nShe babysat for 50 minutes.  \n\\[\n50 \\text{ minutes} = \\frac{50}{60} \\text{ hours} = \\frac{5}{6} \\text{ hours}\n\\]\n\n---\n\n**Step 3: Calculate earnings**  \nEarnings = Hourly rate × Time in hours  \n\\[\n\\text{Earnings} = 12 \\times \\frac{5}{6}\n\\]  \n\\[\n\\text{Earnings} = \\frac{60}{6} = 10\n\\]\n\n---\n\n**Step 4: State the answer**  \nShe earned \\( \\$10 \\).\n\n\\[\n\\boxed{10}\n\\]",
+      "pred_sr": "Alright, let’s go step-by-step.  \n\n**Step 1: Hourly rate**  \nWeng earns $12 per hour.  \n\n**Step 2: Convert hourly rate to per-minute rate**  \n1 hour = 60 minutes.  \nPer minute rate = \\( \\frac{12}{60} = 0.2 \\) dollars per minute.  \n\n**Step 3: Multiply by minutes worked**  \nShe worked 50 minutes.  \nEarnings = \\( 0.2 \\times 50 = 10 \\) dollars.  \n\n**Step 4: Conclusion**  \n\\[\n\\boxed{10}\n\\]  \n\nShe earned **$10**.",
+      "ok_direct": true,
+      "ok_sr": true,
+      "quadrant": "both_correct"
+    },
+    {
+      "idx": 3,
+      "user": "Betty is saving money for a new wallet which costs $100. Betty has only half of the money she needs. Her parents decided to give her $15 for that purpose, and her grandparents twice as much as her parents. How much more money does Betty need to buy the wallet?",
+      "sr_prompt": "Calculate Betty's current total by adding her initial amount and both gifts, then subtract from the total cost.",
+      "gold": "5",
+      "pred_direct": "Alright, let's go step-by-step.  \n\n---\n\n**Step 1: Determine how much Betty currently has.**  \nThe wallet costs **$100**.  \nBetty has only **half** of the money she needs.  \nHalf of $100 = \\( \\frac{1}{2} \\times 100 = 50 \\) dollars.  \nSo Betty starts with **$50**.\n\n---\n\n**Step 2: Add money from parents.**  \nHer parents give her **$15**.  \nNow Betty has:  \n\\( 50 + 15 = 65 \\) dollars.\n\n---\n\n**Step 3: Add money from grandparents.**  \nGrandparents give **twice as much as her parents**.  \nParents gave $15, so grandparents give \\( 2 \\times 15 = 30 \\) dollars.  \nNow Betty has:  \n\\( 65 + 30 = 95 \\) dollars.\n\n---\n\n**Step 4: Find how much more she needs.**  \nWallet price = $100.  \nMoney Betty has now = $95.  \nMoney still needed:  \n\\( 100 - 95 = 5 \\) dollars.\n\n---\n\n\\[\n\\boxed{5}\n\\]\n\nBetty needs **$5** more to buy the wallet.",
+      "pred_sr": "Alright, let's go step-by-step.  \n\n---\n\n**Step 1: Determine how much Betty has initially.**  \nThe wallet costs $100.  \nBetty has only half of the money she needs.  \nHalf of $100 = \\( \\frac{100}{2} = 50 \\) dollars.  \nSo initially Betty has **$50**.\n\n---\n\n**Step 2: Parents' gift.**  \nHer parents give her $15.  \nNow Betty has:  \n\\[\n50 + 15 = 65\n\\]\n\n---\n\n**Step 3: Grandparents' gift.**  \nGrandparents give twice as much as her parents.  \nParents gave $15, so grandparents give \\( 2 \\times 15 = 30 \\) dollars.  \nNow Betty has:  \n\\[\n65 + 30 = 95\n\\]\n\n---\n\n**Step 4: How much more money does she need?**  \nWallet costs $100.  \nShe has $95.  \n\\[\n100 - 95 = 5\n\\]\n\n---\n\n\\[\n\\boxed{5}\n\\]\n\nBetty needs **$5** more to buy the wallet.",
+      "ok_direct": true,
+      "ok_sr": true,
+      "quadrant": "both_correct"
+    },
+    {
+      "idx": 4,
+      "user": "Julie is reading a 120-page book. Yesterday, she was able to read 12 pages and today, she read twice as many pages as yesterday. If she wants to read half of the remaining pages tomorrow, how many pages should she read?",
+      "sr_prompt": "Calculate today's pages from yesterday's, find total read, subtract from total pages, then take half of the remainder.",
+      "gold": "42",
+      "pred_direct": "Alright, let's go step-by-step.  \n\n---\n\n**Step 1: Determine total pages in the book**  \nThe book has \\( 120 \\) pages.\n\n---\n\n**Step 2: Pages read yesterday**  \nYesterday: \\( 12 \\) pages.\n\n---\n\n**Step 3: Pages read today**  \nToday: twice as many as yesterday → \\( 2 \\times 12 = 24 \\) pages.\n\n---\n\n**Step 4: Total pages read so far**  \n\\[\n12 + 24 = 36 \\text{ pages read so far}.\n\\]\n\n---\n\n**Step 5: Remaining pages before tomorrow**  \n\\[\n120 - 36 = 84 \\text{ pages remaining}.\n\\]\n\n---\n\n**Step 6: Tomorrow’s plan**  \nShe wants to read **half of the remaining pages** tomorrow.  \nHalf of \\( 84 \\) is:  \n\\[\n\\frac{84}{2} = 42 \\text{ pages}.\n\\]\n\n---\n\n**Step 7: Conclusion**  \nShe should read \\( 42 \\) pages tomorrow.\n\n\\[\n\\boxed{42}\n\\]",
+      "pred_sr": "Alright, let’s go step-by-step.  \n\n---\n\n**Step 1: Pages read yesterday**  \nYesterday: \\( 12 \\) pages.\n\n**Step 2: Pages read today**  \nToday: twice as many as yesterday → \\( 2 \\times 12 = 24 \\) pages.\n\n**Step 3: Total pages read so far**  \n\\[\n12 + 24 = 36 \\text{ pages}\n\\]\n\n**Step 4: Remaining pages after today**  \nTotal book: \\( 120 \\) pages.  \n\\[\n120 - 36 = 84 \\text{ pages left}\n\\]\n\n**Step 5: Tomorrow’s plan**  \nShe wants to read **half of the remaining pages** tomorrow.  \n\\[\n\\frac{1}{2} \\times 84 = 42 \\text{ pages}\n\\]\n\n---\n\n\\[\n\\boxed{42}\n\\]\n\nShe should read **42 pages** tomorrow.",
+      "ok_direct": true,
+      "ok_sr": true,
+      "quadrant": "both_correct"
+    },
+    {
+      "idx": 5,
+      "user": "James writes a 3-page letter to 2 different friends twice a week.  How many pages does he write a year?",
+      "sr_prompt": "Calculate total weekly pages for both friends, then multiply by the number of weeks in a year.",
+      "gold": "624",
+      "pred_direct": "Alright, let’s break this down step by step.  \n\n---\n\n**Step 1: Understand the situation**  \nJames writes a **3-page letter** to **2 different friends** twice a week.  \n\nThat means:  \n- Each time he writes to both friends, he writes 2 letters.  \n- Each letter is 3 pages.  \n- He does this **twice a week**.\n\n---\n\n**Step 2: Pages per week**  \nIn one session (once a week), he writes to 2 friends:  \n\\[\n2 \\text{ letters} \\times 3 \\text{ pages/letter} = 6 \\text{ pages}\n\\]  \n\nHe does this **twice a week**, so:  \n\\[\n6 \\text{ pages/session} \\times 2 \\text{ sessions/week} = 12 \\text{ pages/week}\n\\]  \n\n---\n\n**Step 3: Pages per year**  \nThere are 52 weeks in a year:  \n\\[\n12 \\text{ pages/week} \\times 52 \\text{ weeks} = 624 \\text{ pages/year}\n\\]  \n\n---\n\n**Step 4: Final answer**  \n\\[\n\\boxed{624}\n\\]  \n\nHe writes **624 pages** in a year.",
+      "pred_sr": "Alright, let’s break this down step by step.  \n\n---\n\n**Step 1: Understand the situation**  \n- James writes a **3-page letter** to **2 different friends**.  \n- He does this **twice a week**.  \n\n---\n\n**Step 2: Pages per week**  \nEach time he writes to both friends, that’s:  \n\\[\n2 \\text{ friends} \\times 3 \\text{ pages} = 6 \\text{ pages}\n\\]  \nHe does this **twice a week**, so:  \n\\[\n6 \\text{ pages} \\times 2 = 12 \\text{ pages per week}\n\\]  \n\n---\n\n**Step 3: Pages per year**  \nA year has 52 weeks.  \n\\[\n12 \\text{ pages/week} \\times 52 \\text{ weeks} = 624 \\text{ pages}\n\\]  \n\n---\n\n**Step 4: Final answer**  \n\\[\n\\boxed{624}\n\\]  \n\nJames writes **624 pages** in a year.",
+      "ok_direct": true,
+      "ok_sr": true,
+      "quadrant": "both_correct"
+    }
+  ]
+}
