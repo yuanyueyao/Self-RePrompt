@@ -4,11 +4,8 @@ from typing import Dict, List
 
 import json
 import torch
-from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
-
-from src.train_qwen3_sr_lora import SPECIAL_TOKENS
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_file",
         type=str,
-        default="data/reprompt_reason/gsm8k_train_reprompt.jsonl",
+        default="data/srp_prompt/gsm8k_train_reprompt.jsonl",
         help="JSONL with {user, sr_prompt, answer}.",
     )
     parser.add_argument(
@@ -91,12 +88,16 @@ def main() -> None:
 
     for idx, sample in enumerate(data, start=1):
         user = sample["user"]
-        prompt = f"{SPECIAL_TOKENS['user']}\n{user}\n\n{SPECIAL_TOKENS['assistant']}\n"
+        messages = [
+            {"role": "user", "content": user},
+        ]
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
-        inputs = tokenizer(
-            prompt,
-            return_tensors="pt",
-        ).to(model.device)
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
         with torch.no_grad():
             out = model.generate(

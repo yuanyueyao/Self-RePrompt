@@ -1,18 +1,18 @@
 """
-使用大语言模型为 GSM8K 样本生成 Self-RePrompt 数据（user/sr_prompt/answer 三元组）。
+使用大语言模型为 GSM8K 样本生成 Self-RePrompt 训练用 sr_prompt（user/sr_prompt/answer 三元组）。
 
 使用方式:
     # 默认：train 子集，全部样本
-    python src/gen_reprompt_from_gsm8k.py
+    python src/gen_srp_prompt_from_gsm8k.py
 
     # 快速测试 10 条
-    python src/gen_reprompt_from_gsm8k.py --max_samples 10
+    python src/gen_srp_prompt_from_gsm8k.py --max_samples 10
 
     # 使用 test 子集
-    python src/gen_reprompt_from_gsm8k.py --split test --output data/reprompt_reason/gsm8k_test_reprompt.jsonl
+    python src/gen_srp_prompt_from_gsm8k.py --split test --output data/reprompt_reason/gsm8k_test_reprompt.jsonl
 
     # 启用 solution hint（将 answer_full 中 #### 前的解题步骤传给 teacher）
-    python src/gen_reprompt_from_gsm8k.py --use_solution --max_samples 5
+    python src/gen_srp_prompt_from_gsm8k.py --use_solution --max_samples 5
 """
 import argparse
 import json
@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=str,
         required=False,
-        default="data/reprompt_reason/gsm8k_train_reprompt.jsonl",
+        default="data/srp_prompt/gsm8k_train_reprompt.jsonl",
         help="输出 JSONL 文件路径，每行一个 {user, sr_prompt, answer}。",
     )
     parser.add_argument(
@@ -56,8 +56,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="deepseek-ai/DeepSeek-V3.2",
-        help="teacher 大模型名称（示例使用 OpenAI 风格，可按需替换）。",
+        default="deepseek-chat",
+        help="DeepSeek 官方模型名称（chat/completion 模型）。",
     )
     parser.add_argument(
         "--use_solution",
@@ -142,14 +142,15 @@ def build_teacher_messages(
 
 def call_llm(model: str, messages: List[Dict[str, str]]) -> str:
     """
-    调用外部大模型生成 sr_prompt。
+    调用 DeepSeek 官方 OpenAI SDK 生成 sr_prompt。
 
-    这里使用 SiliconFlow 的 OpenAI 兼容 API：
-      - 从环境变量 SILICONFLOW_API_KEY 读取密钥
-      - 从环境变量 SILICONFLOW_BASE_URL 读取 base_url（可选，默认 https://api.siliconflow.cn/v1）
+    - 从环境变量 DEEPSEEK_API_KEY 读取密钥
+    - 使用官方 base_url https://api.deepseek.com
     """
-    api_key = os.getenv("SILICONFLOW_API_KEY", "sk-efwradynmcooxyiglmldbxlhlkxecwjjgkcmcgdgtfnkazxr")
-    base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("请先在环境变量 DEEPSEEK_API_KEY 中配置 DeepSeek API 密钥")
+    base_url = "https://api.deepseek.com"
 
     client = OpenAI(
         api_key=api_key,
@@ -179,6 +180,9 @@ def main() -> None:
     if args.max_samples is not None:
         data = data[: args.max_samples]
 
+    total = len(data)
+    print(f"加载数据：{input_path} split={args.split}，共 {total} 条样本")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     processed = 0
@@ -207,8 +211,9 @@ def main() -> None:
             out_f.write("\n")
 
             processed += 1
-            if processed % 50 == 0:
-                print(f"processed {processed} samples...")
+            if processed % 10 == 0 or processed == total:
+                pct = processed / total * 100
+                print(f"[GSM8K SRP_PROMPT] {processed}/{total} ({pct:.1f}%)")
 
     print(f"done. total processed: {processed}, output -> {output_path}")
 

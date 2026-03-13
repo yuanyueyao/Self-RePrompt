@@ -3,3 +3,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 生成的大数据文件（可重新生成）
+data/srp_prompt/*.jsonl
+data/srp_prompt_with_answer/*.jsonl
+eval/*.json

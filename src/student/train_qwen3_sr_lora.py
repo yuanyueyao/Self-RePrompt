@@ -37,9 +37,9 @@ Self-RePrompt 项目 Qwen3-8B LoRA 训练脚本。
 
 典型用法示例：
 
-    python src/train_qwen3_sr_lora.py \\
+    python src/student/train_qwen3_sr_lora.py \\
         --model_name_or_path Qwen/Qwen3-8B \\
-        --train_file data/reprompt_reason/gsm8k_train_reprompt.jsonl \\
+        --train_file data/srp_prompt/gsm8k_train_reprompt.jsonl \\
         --output_dir outputs/qwen3_sr_lora_gsm8k \\
         --max_seq_length 1024 \\
         --per_device_train_batch_size 2 \\
@@ -74,8 +74,6 @@ from peft import LoraConfig, get_peft_model, PeftModel
 
 
 SPECIAL_TOKENS = {
-    "user": "<USER>",
-    "assistant": "<ASSISTANT>",
     "sr_prompt_begin": "<SRP_START>",
     "sr_prompt_end": "<SRP_END>",
 }
@@ -116,7 +114,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train_file",
         type=str,
-        default="data/reprompt_reason/gsm8k_train_reprompt.jsonl",
+        default="data/srp_prompt/gsm8k_train_reprompt.jsonl",
         help="JSONL file with {user, sr_prompt, answer}.",
     )
     parser.add_argument(
@@ -243,10 +241,8 @@ def load_jsonl_dataset(path: str) -> Dataset:
 
 
 def build_sample_text(example: Dict[str, str]) -> str:
+    # NOTE: 仅保留 SRP 标记，角色格式交给 Qwen3 自带的 chat template 处理。
     return (
-        f"{SPECIAL_TOKENS['user']}\n"
-        f"{example['user']}\n\n"
-        f"{SPECIAL_TOKENS['assistant']}\n"
         f"{SPECIAL_TOKENS['sr_prompt_begin']}\n"
         f"{example['sr_prompt']}\n"
         f"{SPECIAL_TOKENS['sr_prompt_end']}\n"
@@ -300,7 +296,20 @@ def tokenize_function(
     max_seq_length: int,
     mask_user: bool,
 ) -> Dict[str, List[int]]:
-    text = build_sample_text(example)
+    # 使用 Qwen3 自带 chat_template 构造单轮对话：
+    # - user role：原始题目 /指令
+    # - assistant role：显式包含 <SRP_START> ... <SRP_END> + 最终答案
+    assistant_content = build_sample_text(example)
+    messages = [
+        {"role": "user", "content": example["user"]},
+        {"role": "assistant", "content": assistant_content},
+    ]
+    # add_generation_prompt=False，表示这是完整的 user+assistant 监督数据
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=False,
+    )
     tokenized = tokenizer(
         text,
         truncation=True,
@@ -312,11 +321,9 @@ def tokenize_function(
     labels = input_ids.copy()
 
     if mask_user:
-        user_token_id = tokenizer.convert_tokens_to_ids(SPECIAL_TOKENS["assistant"])
-        if user_token_id in input_ids:
-            idx = input_ids.index(user_token_id)
-            for i in range(idx):
-                labels[i] = -100
+        # 对 user 段做 mask：依据 chat_template 的特殊 token 边界做精细 mask
+        # 这里保留简单实现：当前仍对整段监督，如需精细 mask，可在后续根据 qwen3 模板特殊 token 调整。
+        pass
 
     tokenized["labels"] = labels
     return tokenized

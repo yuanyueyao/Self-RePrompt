@@ -33,8 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="deepseek-ai/DeepSeek-V3.2",
-        help="硅基流动上的模型名。",
+        default="deepseek-chat",
+        help="DeepSeek 官方模型名称（chat/completion 模型）。",
     )
     parser.add_argument(
         "--max_samples",
@@ -58,10 +58,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def get_client() -> OpenAI:
-    api_key = os.getenv("SILICONFLOW_API_KEY")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        raise RuntimeError("请设置环境变量 SILICONFLOW_API_KEY")
-    base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+        raise RuntimeError("请设置环境变量 DEEPSEEK_API_KEY（DeepSeek 官方 API 密钥）")
+    base_url = "https://api.deepseek.com"
     return OpenAI(api_key=api_key, base_url=base_url)
 
 

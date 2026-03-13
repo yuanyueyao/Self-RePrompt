@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=str,
         required=False,
-        default="data/reprompt_reason/hotpot_train_qa_2000_reprompt.jsonl",
+        default="data/srp_prompt/hotpot_train_qa_2000_reprompt.jsonl",
         help="输出 JSONL 文件路径，每行一个 {user, sr_prompt, answer}。",
     )
     parser.add_argument(
@@ -32,8 +32,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="deepseek-ai/DeepSeek-V3.2",
-        help="teacher 大模型名称（示例使用 OpenAI 风格，可按需替换）。",
+        default="deepseek-chat",
+        help="DeepSeek 官方模型名称（chat/completion 模型）。",
     )
     return parser.parse_args()
 
@@ -74,14 +74,15 @@ def build_teacher_messages(question: str) -> List[Dict[str, str]]:
 
 def call_llm(model: str, messages: List[Dict[str, str]]) -> str:
     """
-    调用外部大模型生成 sr_prompt。
+    调用 DeepSeek 官方 OpenAI SDK 生成 sr_prompt。
 
-    这里使用 SiliconFlow 的 OpenAI 兼容 API：
-      - 从环境变量 SILICONFLOW_API_KEY 读取密钥
-      - 从环境变量 SILICONFLOW_BASE_URL 读取 base_url（可选，默认 https://api.siliconflow.cn/v1）
+    - 从环境变量 DEEPSEEK_API_KEY 读取密钥
+    - 使用官方 base_url https://api.deepseek.com
     """
-    api_key = os.getenv("SILICONFLOW_API_KEY","sk-efwradynmcooxyiglmldbxlhlkxecwjjgkcmcgdgtfnkazxr")
-    base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("请先在环境变量 DEEPSEEK_API_KEY 中配置 DeepSeek API 密钥")
+    base_url = "https://api.deepseek.com"
 
     client = OpenAI(
         api_key=api_key,

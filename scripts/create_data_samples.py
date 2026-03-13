@@ -85,10 +85,11 @@ def main() -> None:
         except Exception as e:
             print(f"  {f.name}: ERROR {e}")
 
-    # reprompt_reason 的 jsonl
-    reprompt = Path("data/reprompt_reason/hotpot_train_qa_2000_reprompt.jsonl")
-    if reprompt.exists():
-        sample_jsonl(reprompt, SAMPLE_DIR / "hotpot_train_qa_2000_reprompt.jsonl")
+    # srp_prompt 的 jsonl
+    for name in ["hotpot_train_qa_2000_reprompt.jsonl", "gsm8k_train_reprompt.jsonl"]:
+        reprompt = Path("data/srp_prompt") / name
+        if reprompt.exists():
+            sample_jsonl(reprompt, SAMPLE_DIR / name)
 
     print("\nDone.")
 
