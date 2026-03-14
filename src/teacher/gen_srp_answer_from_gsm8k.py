@@ -235,6 +235,19 @@ def process_one(
     return idx, record
 
 
+def load_done_indices(out_path: Path) -> set:
+    """读取已写入输出文件的样本 idx（1-based），用于断点续传。"""
+    done: set = set()
+    if not out_path.exists():
+        return done
+    with out_path.open("r", encoding="utf-8") as f:
+        for i, line in enumerate(f, start=1):
+            line = line.strip()
+            if line:
+                done.add(i)
+    return done
+
+
 def main() -> None:
     args = parse_args()
     client = get_client()
@@ -242,12 +255,42 @@ def main() -> None:
     print(f"加载数据：{args.data_file}" + (f"（最多 {args.max_samples} 条）" if args.max_samples else "（全部）"))
     data = load_data(args.data_file, args.max_samples)
     total = len(data)
-    print(f"实际生成样本数：{total}，并行 workers={args.workers}")
     if total == 0:
         print("没有有效样本，退出。")
         return
 
-    results: List[Tuple[int, Dict[str, object]]] = []
+    out_path = Path(args.output_file)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 断点续传：跳过已完成的样本
+    done_indices = load_done_indices(out_path)
+    skip_count = len(done_indices)
+    if skip_count:
+        print(f"检测到已有输出 {skip_count} 条，跳过，从第 {skip_count + 1} 条继续。")
+
+    todo = [(idx, sample) for idx, sample in enumerate(data, start=1) if idx not in done_indices]
+    print(f"待生成：{len(todo)} 条（总 {total}），并行 workers={args.workers}")
+
+    if not todo:
+        print("全部已完成，无需重新生成。")
+        return
+
+    # 以追加模式打开输出文件，每条完成立即落盘（线程安全写锁）
+    import threading
+    write_lock = threading.Lock()
+    done_count = skip_count
+
+    def write_record(rec: Dict[str, object]) -> None:
+        nonlocal done_count
+        with write_lock:
+            with out_path.open("a", encoding="utf-8") as f:
+                json.dump(rec, f, ensure_ascii=False)
+                f.write("\n")
+            done_count += 1
+            if done_count % 50 == 0 or done_count == total:
+                pct = done_count / total * 100
+                print(f"进度 {done_count}/{total} ({pct:.1f}%) ...")
+
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(
@@ -258,26 +301,16 @@ def main() -> None:
                 idx,
                 sample,
             ): idx
-            for idx, sample in enumerate(data, start=1)
+            for idx, sample in todo
         }
-        done = 0
         for future in as_completed(futures):
-            results.append(future.result())
-            done += 1
-            if done % 10 == 0 or done == total:
-                print(f"已生成 {done}/{total} 条...")
+            try:
+                _, record = future.result()
+                write_record(record)
+            except Exception as e:
+                print(f"[ERROR] 某条样本处理失败：{e}")
 
-    results.sort(key=lambda x: x[0])
-    records = [r[1] for r in results]
-
-    out_path = Path(args.output_file)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        for rec in records:
-            json.dump(rec, f, ensure_ascii=False)
-            f.write("\n")
-
-    print(f"完成。共 {total} 条，已写入 {args.output_file}")
+    print(f"完成。共 {total} 条，结果已写入 {args.output_file}")
 
 
 if __name__ == "__main__":

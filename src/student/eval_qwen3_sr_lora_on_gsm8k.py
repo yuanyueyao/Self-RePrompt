@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base_model",
         type=str,
-        default="Qwen/Qwen3-8B",
+        default="model/Qwen3-8B",
         help="Base Qwen3-8B model name or path.",
     )
     parser.add_argument(
@@ -67,6 +67,7 @@ def load_jsonl(path: str, max_samples: int) -> List[Dict[str, str]]:
 def main() -> None:
     args = parse_args()
 
+    # 从 adapter 目录加载 tokenizer（含 <SRP_START>/<SRP_END> 特殊 token）
     tokenizer = AutoTokenizer.from_pretrained(
         args.lora_dir,
         trust_remote_code=True,
@@ -76,10 +77,13 @@ def main() -> None:
 
     base = AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
     )
+    # 必须在加载 adapter 前将 base model 词表 resize 到 adapter 保存时的大小，
+    # 否则 embed_tokens/lm_head shape 不匹配会报错
+    base.resize_token_embeddings(len(tokenizer))
     model = PeftModel.from_pretrained(base, args.lora_dir)
     model.eval()
 
