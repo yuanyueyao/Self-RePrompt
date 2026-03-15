@@ -4,6 +4,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# 原始/生成数据不纳入仓库（体积大，可本地或脚本重新生成）
+data/
+
 # 生成的大数据文件（可重新生成）
 data/srp_prompt/*.jsonl
 data/srp_prompt_with_answer/*.jsonl
