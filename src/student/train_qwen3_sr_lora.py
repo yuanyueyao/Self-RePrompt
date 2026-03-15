@@ -76,6 +76,7 @@ class TrainConfig:
     model_name_or_path: str
     train_file: str
     output_dir: str
+    filter_quadrant: str = "misleading"
     max_seq_length: int = 1024
     mask_user: bool = False
     lora_r: int = 64
@@ -106,13 +107,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train_file",
         type=str,
-        default="data/srp_prompt_with_answer/hotpot_train_qa_2000_with_srp_answer.jsonl",
-        help="JSONL file with {user, sr_prompt, srp_answer}.",
+        default=(
+            "data/srp_prompt_with_answer/hotpot_train_qa_2000_with_srp_answer.jsonl,"
+            "data/srp_prompt_with_answer/gsm8k_train_with_srp_answer.jsonl,"
+            "data/srp_prompt_with_answer/openbookqa_train_with_srp_answer.jsonl"
+        ),
+        help="JSONL 文件路径，多个文件用逗号分隔，会合并为一个训练集。",
+    )
+    parser.add_argument(
+        "--filter_quadrant",
+        type=str,
+        default="misleading",
+        help="逗号分隔的 quadrant 值，这些样本将被过滤掉。"
+             "默认过滤 'misleading'（sr_prompt 误导模型的样本）。"
+             "设为空字符串则不过滤。",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="outputs/qwen3_sr_lora_hotpot_v2",
+        default="outputs/qwen3_sr_lora_v3",
         help="Directory to save LoRA adapter and tokenizer.",
     )
     parser.add_argument(
@@ -206,29 +219,52 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_jsonl_dataset(path: str) -> Dataset:
+def load_jsonl_dataset(train_files: str, filter_quadrants: set) -> Dataset:
+    """
+    加载一个或多个 JSONL 文件并合并为单个 Dataset。
+
+    Args:
+        train_files: 逗号分隔的文件路径字符串。
+        filter_quadrants: 需要过滤掉的 quadrant 值集合（如 {"misleading"}）。
+    """
+    paths = [p.strip() for p in train_files.split(",") if p.strip()]
     records: List[Dict[str, str]] = []
-    p = Path(path)
-    with p.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            obj = json.loads(line)
-            user = (obj.get("user") or "").strip()
-            sr_prompt = (obj.get("sr_prompt") or "").strip()
-            srp_answer = (obj.get("srp_answer") or "").strip()
-            if not user or not srp_answer or not sr_prompt:
-                continue
-            records.append(
-                {
-                    "user": user,
-                    "sr_prompt": sr_prompt,
-                    "srp_answer": srp_answer,
-                }
-            )
+    stats: Dict[str, Dict] = {}
+
+    for path in paths:
+        p = Path(path)
+        file_records = 0
+        file_filtered = 0
+        with p.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                user = (obj.get("user") or "").strip()
+                sr_prompt = (obj.get("sr_prompt") or "").strip()
+                srp_answer = (obj.get("srp_answer") or "").strip()
+                if not user or not srp_answer or not sr_prompt:
+                    continue
+                # quadrant 过滤
+                quadrant = obj.get("quadrant", "")
+                if quadrant in filter_quadrants:
+                    file_filtered += 1
+                    continue
+                records.append({"user": user, "sr_prompt": sr_prompt, "srp_answer": srp_answer})
+                file_records += 1
+        stats[p.name] = {"kept": file_records, "filtered": file_filtered}
+
     if not records:
-        raise RuntimeError(f"No valid records found in {path}")
+        raise RuntimeError(f"No valid records found in: {train_files}")
+
+    print(f"\n数据集加载汇总（过滤 quadrant: {filter_quadrants or '无'}）：")
+    total_kept = 0
+    for name, s in stats.items():
+        total_kept += s["kept"]
+        print(f"  {name}: {s['kept']} 条保留，{s['filtered']} 条过滤")
+    print(f"  合计: {total_kept} 条训练样本\n")
+
     return Dataset.from_list(records)
 
 
@@ -339,6 +375,7 @@ def main() -> None:
     cfg = TrainConfig(
         model_name_or_path=args.model_name_or_path,
         train_file=args.train_file,
+        filter_quadrant=args.filter_quadrant,
         output_dir=args.output_dir,
         max_seq_length=args.max_seq_length,
         mask_user=args.mask_user,
@@ -357,7 +394,8 @@ def main() -> None:
         bf16=args.bf16,
     )
 
-    raw_dataset = load_jsonl_dataset(cfg.train_file)
+    filter_set = {q.strip() for q in cfg.filter_quadrant.split(",") if q.strip()}
+    raw_dataset = load_jsonl_dataset(cfg.train_file, filter_set)
     split = raw_dataset.train_test_split(test_size=0.05, shuffle=True, seed=42)
     train_ds = split["train"]
     eval_ds = split["test"]
