@@ -419,8 +419,8 @@ B4 在 MuSiQue 上达到 89.0\%，较基线 B0（79.0\%）提升 \textbf{+10.0\%
 \end{itemize}
 
 \section{本章小结}
+
 本章给出了实验设置、数据集与基线定义。表~\ref{tab:dataset}汇总了训练数据规模，表~\ref{tab:teacher_gsm8k}与表~\ref{tab:quadrant}展示了数据构造阶段的准确率及四象限分布，表~\ref{tab:baseline_full}与表~\ref{tab:student_acc}给出了 B0--B4 全面基线对比及 Self-RePrompt 提升幅度，表~\ref{tab:trigger_rate}展示了内部提示段格式触发率，表~\ref{tab:musique}验证了 Self-RePrompt 在 OOD 数据集 MuSiQue 上的泛化性能。综合来看，Self-RePrompt 在训练集内三个任务上均实现稳定提升（最高 +7.0\%），在未参与训练的 MuSiQue 上提升幅度达 +10.0\%，展现出方法较强的分布外泛化能力，为后续进一步完善消融分析与更大规模验证提供了实验基础。
-本章给出了实验设置、数据集与评估方式。表\ref{tab:dataset}汇总了训练数据规模，表\ref{tab:teacher_gsm8k}与表\ref{tab:quadrant}展示了数据构造阶段的准确率及四象限分布，表\ref{tab:student_acc}与表\ref{tab:trigger_rate}分别展示了 Self-RePrompt 的任务性能与格式触发稳定性，表\ref{tab:ablation}则给出了关键设计的消融结果。综合来看，数据构造阶段引入自重写提示能够带来一定增益，而 Self-RePrompt 经过 LoRA 微调后，不仅能够较稳定地产生内部提示段，也能够在多个任务上取得更优表现，从实验层面支撑了 Self-RePrompt 方法的有效性。
 
 \chapter{总结与展望}
 
