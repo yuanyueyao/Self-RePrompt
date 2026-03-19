@@ -17,5 +17,4 @@
 # 编辑器配置（不纳入仓库）
 .vscode/
 
-# bib 备份文件
-references/ref.buk
+# 不忽略 references/ 下的 .bst 样式文件（ref.buk / ref.buk.bst 均需跟踪）
