@@ -1,0 +1,21 @@
+# LaTeX 编译产物
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.thm
+*.fdb_latexmk
+*.fls
+*.xdv
+
+# macOS 元数据
+.DS_Store
+
+# 编辑器配置（不纳入仓库）
+.vscode/
+
+# bib 备份文件
+references/ref.buk

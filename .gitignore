@@ -11,3 +11,10 @@ data/
 data/srp_prompt/*.jsonl
 data/srp_prompt_with_answer/*.jsonl
 eval/*.json
+
+# 模型权重与训练输出（体积大，不纳入仓库）
+model/
+outputs/
+
+# 运行日志
+logs/

@@ -1,0 +1,33 @@
+% !Mode:: "TeX:UTF-8"
+% !TEX root = ../sdumain.tex
+
+%%  可通过增加或减少 setup/format.tex中的
+%%  第274行 \setlength{\@title@width}{8cm}中 8cm 这个参数来 控制封面中下划线的长度。
+
+\cheading{山东大学本科毕业论文（设计）}      % 设置正文的页眉，需要填上对应的毕业年份
+\ctitle{大语言模型自重写提示词方法研究与实现}    % 封面用论文标题，自己可手动断行
+\caffil{计算机科学与技术学院} % 学院名称
+\csubject{计算机科学与技术}   % 专业名称
+\cgrade{2022~级}            % 年级
+\cauthor{袁月耀}               % 学生姓名
+\cnumber{202200130190}      % 学号
+\csupervisor{尹建华}          % 导师姓名
+\crank{副教授}               % 导师职称
+
+\cdate{2026~年~5~月~26~日} % 日期
+
+\cabstract{
+大语言模型在开放域问答、数学推理与知识密集型任务中表现出较强能力，但其性能通常对输入提示质量较为敏感。现有提示优化方法往往依赖人工设计或外部提示器，增加了系统部署复杂度与使用成本。针对上述问题，本文提出一种面向推理增强的自重写提示方法 Self-RePrompt。该方法通过引入 \texttt{<SRP\_START>} 与 \texttt{<SRP\_END>} 两个特殊 token，使模型在不改变网络结构的前提下，先生成内部提示段，再基于该提示完成最终作答，从而实现模型内部的自引导推理。为解决训练数据难以直接获得的问题，本文设计了由数据构造模型驱动的数据生成流程：针对每条“用户问题-标准答案”样本，自动生成内部提示段与对应理想回答，并依据四象限标签过滤误导性样本，以提升监督数据质量。在此基础上，本文采用 LoRA 对 Qwen3-8B 进行参数高效微调，并在 GSM8K、HotpotQA、OpenBookQA 等数据集上开展实验。结果表明，Self-RePrompt 在数据构造阶段能够带来一定的提示增益，并在微调后较稳定地产生内部提示段，在多个任务上取得更优表现。本文工作为单模型场景下的可解释推理增强提供了一种实现简单、训练友好且具有扩展潜力的技术方案。
+}
+
+\ckeywords{大语言模型；自重写提示；LoRA；参数高效微调；推理增强}
+
+\eabstract{
+Large language models (LLMs) have demonstrated strong capabilities in open-domain question answering, mathematical reasoning, and other knowledge-intensive tasks, yet their performance remains highly sensitive to prompt quality. Existing prompt optimization approaches often rely on hand-crafted templates or external prompt engines, which increase system complexity and deployment cost. To address this issue, this thesis proposes Self-RePrompt, a self-rewritten prompting method for reasoning enhancement. By introducing two special tokens, \texttt{<SRP\_START>} and \texttt{<SRP\_END>}, the model is trained to first generate an internal prompt segment and then produce the final answer, without modifying the underlying model architecture. To construct supervision data, a data-construction-model-driven pipeline is designed to automatically generate internal prompt segments and corresponding ideal answers for each question-answer pair, while misleading samples are filtered through quadrant-based labeling. Based on the resulting data, LoRA is applied to fine-tune Qwen3-8B in a parameter-efficient manner, and experiments are conducted on GSM8K, HotpotQA, and OpenBookQA. The results indicate that Self-RePrompt brings measurable prompting gains during the data construction stage and can stably trigger the internal prompt segment after fine-tuning, leading to improved performance across multiple tasks. This work provides a simple, training-friendly, and extensible solution for interpretable reasoning enhancement in single-model deployment scenarios.
+}
+
+\ekeywords{Large Language Model; Self-RePrompt; LoRA; Parameter-Efficient Fine-Tuning; Reasoning Enhancement}
+
+\makecover
+
+\clearpage
