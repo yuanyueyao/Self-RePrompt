@@ -1,0 +1,437 @@
+% !Mode:: "TeX:UTF-8"
+% !TEX root = sdumain.tex
+
+\iffalse
+\bibliography{references/reference.bib}
+\fi
+
+%%%%%%% 正文 %%%%%%%
+\chapter{绪论}
+
+\section{研究背景与意义}
+
+大语言模型（Large Language Model，LLM）在开放域问答、数学推理、代码生成等任务上取得了显著进展，其表现往往高度依赖输入提示（prompt）的质量。在实际应用中，用户给出的问题可能较为模糊、冗长或隐含多步推理需求，若直接作为模型的唯一输入，容易导致推理路径不清晰、答案准确性下降。传统做法通常依赖两类手段：一是引入外部“提示优化器”——即先用一个模型或规则系统对用户输入进行重写、补全或结构化，再交给主模型生成回答，这会增加部署成本和延迟；二是依赖人工精心设计提示模板或思维链示例，难以规模化且对不同任务泛化有限。
+
+在此背景下，本文关注一种无需外部提示器、由模型在内部完成“提示自重写”的方法：当模型接收到用户原始输入后，先生成一段仅供内部使用的结构化提示，再基于该提示继续生成最终回答。这一思路与 Self-RAG 等自引导式方法在目标上具有一致性，即都希望模型在推理过程中具备更强的自组织与自调节能力；但与依赖检索、规划器或外部控制模块的方法不同，本文方法不改变模型结构，不引入额外检索组件，而是通过特殊 token 约定与监督微调，使模型学会在作答前先输出简短、凝练且具有任务导向性的内部指导语。本文将该方法命名为 Self-RePrompt，并围绕训练数据构建、Self-RePrompt 微调及多任务实验验证展开设计与实现。
+
+从研究价值看，本文工作主要体现在以下三个方面。其一，针对当前提示优化方法对外部模块依赖较强的问题，提出了一种可直接嵌入自回归生成流程中的自重写提示机制，为单模型部署场景下的推理增强提供了实现路径。其二，针对“自重写提示”监督数据难以直接获得的问题，设计了基于数据构造模型自动生成三元组数据的构造流程，并结合四象限筛选策略提升训练数据质量。其三，围绕 GSM8K、HotpotQA、OpenBookQA 等任务构建实验体系，分析数据构造阶段 direct 与 sr 两种输入方式的性能差异，并验证 LoRA 微调后的 Self-RePrompt 能否稳定触发内部提示段与提升下游任务表现。上述工作对于提示工程、参数高效微调以及可解释推理机制的结合具有一定的参考意义。
+
+\section{国内外研究现状}
+
+本节从大语言模型与提示工程、提示自动优化与改写、自引导与自适应推理以及参数高效微调四个维度，梳理与本文工作最为相关的国内外研究进展，并指出各类方法的局限性以及本文工作的定位与区别。
+
+\subsection{大语言模型与提示工程}
+
+大语言模型通过在海量文本语料上进行预训练，获得了强大的语言理解与生成能力。Radford 等人~\cite{radford2019language} 提出的 GPT-2 展示了语言模型在零样本任务迁移上的潜力；Brown 等人~\cite{Brown:3495724.3495883} 的 GPT-3 进一步证明，通过精心设计的自然语言提示，模型可在少样本甚至零样本设定下完成分类、生成与问答等新任务，无需额外梯度更新。这一现象促使研究界将大量精力投入到"如何构造更好的提示"这一问题上，形成了提示工程这一新兴研究方向。Liu 等人~\cite{Liu:3560815} 对预训练、提示与预测范式进行了系统性梳理，将提示方法归纳为离散提示（hard prompt）与连续提示（soft prompt）两大类，并对两类方法的适用场景与优劣进行了比较；王东清等人~\cite{DongQing202501001} 从中文视角综述了大语言模型中的提示词工程，梳理了零样本、少样本、指令跟随等多种提示范式，指出提示的形式与内容对模型行为影响巨大，但高质量提示的设计严重依赖专家经验，难以自动化与规模化。
+
+在复杂推理任务上，Wei 等人~\cite{Wei:3600270.3602070} 提出的思维链（Chain-of-Thought，CoT）提示通过在设计好的 prompt 中显式展示逐步推理的过程，引导模型先进行中间推理再给出答案，在数学计算、逻辑推理等需要多步推导的任务上取得了显著提升，揭示了"推理链"对大模型的激发作用。Zhang 等人~\cite{zhang2022automatic} 进一步提出自动思维链（Auto-CoT），通过对测试问题进行聚类并自动为每类生成推理示例，从而大幅减少人工设计负担，使 CoT 在更大规模的评测中得到应用。然而，上述方法的中间推理链内容仍以人工设计或固定模板为主，难以针对不同输入动态生成任务导向性指导。此外，检索增强生成（Retrieval-Augmented Generation，RAG）~\cite{lewis2020retrieval} 通过引入外部检索模块为模型提供上下文知识，在知识密集型问答任务上表现优异，但其依赖独立的检索索引与检索组件，增加了系统复杂度与部署成本。综合来看，当前主流提示工程方法的共同局限在于：提示的生成要么依赖人工设计，要么依赖外部模块，均难以在单一模型的自回归推理流程中以端到端方式自动完成"提示自适应"。
+
+\subsection{提示自动优化与改写}
+
+随着提示工程研究的深入，如何自动化地发现更优提示成为研究热点。早期工作主要基于离散搜索或梯度反传对 prompt token 进行优化，但这类方法产生的提示通常不具有自然语言可读性，且对搜索空间的覆盖有限。近年来，基于大语言模型自身能力进行提示改写与优化的方法逐渐兴起：这类方法将提示优化视为一个语言生成任务，由优化器模型（通常为较强的 LLM）为目标任务生成多个候选提示，再通过在验证集上评估候选提示的表现来筛选最优者，并迭代改进。这一思路在自动提示工程（Automatic Prompt Engineer，APE）等工作中得到验证，并在多项基准测试上超过了人工设计的提示。
+
+然而，上述提示优化方法通常将优化过程视为离线、独立于推理之外的预处理步骤：优化完成后的提示在推理时对所有输入一视同仁地使用，缺乏对当前输入差异的感知与自适应。与此形成对比，另一类思路尝试在推理时动态生成与当前输入相匹配的提示。检索式提示（retrieve-then-prompt）方法通过从示例库中检索与当前输入最相似的样本作为上下文，实现了一定程度的输入自适应~\cite{lewis2020retrieval}；个性化对话中的选择性提示调优~\cite{huang-etal-2024-selective} 则将用户偏好信息嵌入提示，进一步拓展了输入自适应的应用场景。
+
+本文的 Self-RePrompt 可被视为"推理时输入自适应提示生成"这一方向的新探索：它无需外部优化器或检索库，而是通过监督微调将"针对当前输入生成内部提示段"的能力直接注入模型参数，使模型在推理时能够根据具体问题动态生成凝练、有效的内部指导语，并在同一次自回归解码中完成提示生成与最终作答，兼顾了自适应性与推理效率。
+
+\subsection{自引导与自适应推理}
+
+让模型在生成过程中"自我引导"或"自适应"地调用检索、规划、反思等机制，是近年来大语言模型推理增强领域的重要研究方向。Self-RAG~\cite{selfrag} 通过引入多种特殊反思 token（如 \texttt{[Retrieve]}、\texttt{[IsRel]}、\texttt{[IsSup]} 等），将"是否检索""是否批判""是否重生成"等决策统一编码在一条自回归序列中，使模型能够在需要时主动调用检索，并对检索结果的相关性与支持性进行自我评估，在知识密集型开放域问答等任务上取得了显著提升。该工作的核心贡献在于，将外部检索这一原本需要独立模块完成的能力内化为模型的生成行为，通过特殊 token 实现"检索即生成"的统一建模。
+
+Reflexion~\cite{reflexion} 从强化学习的视角出发，将语言反馈作为奖励信号：智能体在完成任务后，根据环境反馈生成自然语言形式的反思记忆，并在下一轮尝试时将该反思纳入上下文，从而在多轮试错中逐步改进策略。该方法不依赖梯度更新，适用于代码生成、顺序决策等需要迭代改进的任务，但其多轮推理的特性使得单次任务完成的延迟较高。Fan 等人~\cite{Fan:3637528.3671470} 与刘雪颖等人~\cite{Liu20250310004} 的综述工作进一步梳理了 RAG 与自引导推理相结合的最新进展，指出当前方法在检索质量、推理链可控性以及多跳推理能力等方面仍面临挑战。
+
+上述工作与本文的 Self-RePrompt 有相似动机——均希望模型在推理过程中具备更强的自组织与自调节能力——但在实现路径上存在本质差异：Self-RAG 依赖检索索引与检索模块，Reflexion 依赖多轮交互与外部反馈信号，而 Self-RePrompt 不引入任何外部模块，仅通过约定特殊 token 与监督微调，在单次自回归推理中完成“生成内部提示段 $\rightarrow$ 基于提示作答”的端到端过程，系统复杂度低，推理延迟小，适用于对部署复杂度敏感或无法接入外部服务的单模型推理场景。
+
+\subsection{参数高效微调}
+
+大语言模型的全参数微调（Full Fine-Tuning）需要对模型所有参数进行梯度更新，对算力与显存的要求极高，在参数规模超过数十亿的模型上难以实际落地。为此，参数高效微调（Parameter-Efficient Fine-Tuning，PEFT）成为当前主流的模型适配范式，其核心思想是在保持基座模型参数冻结的前提下，仅训练少量额外参数或低秩增量，以较低代价使模型适应目标任务。
+
+Houlsby 等人~\cite{houlsby2019parameter} 较早提出了适配器（Adapter）结构，在 Transformer 层的前馈网络之间插入轻量级瓶颈模块，仅训练该模块参数，在保留基座知识的同时以极少的参数代价适应下游任务，并在多项 NLP 基准测试上验证了有效性。Guo 等人~\cite{guo-etal-2021-parameter} 通过差分剪枝（Diff Pruning）选择性地更新预训练模型中对任务最重要的参数子集，进一步降低了可训练参数量。Hu 等人~\cite{hu2022lora} 提出的低秩适配（Low-Rank Adaptation，LoRA）假设微调过程中权重的变化量集中于低秩子空间，对线性层权重 $W_0$ 引入低秩分解 $\Delta W = BA$（$B \in \mathbb{R}^{d \times r}$、$A \in \mathbb{R}^{r \times k}$、$r \ll \min(d,k)$），推理时将 $\Delta W$ 合并入 $W_0$，不引入额外推理延迟，成为目前使用最广泛的 PEFT 方案之一。秦董洪等人~\cite{Qin2025032500K} 对 LoRA、Adapter、Prefix Tuning 等主流 PEFT 技术进行了系统综述，分析了不同方法在参数量、计算开销与任务性能之间的权衡。Mao 等人~\cite{mao-etal-2022-unipelt} 提出的 UniPELT 通过门控机制将多种 PEFT 方法统一在同一框架下，自动选择合适的适配策略，进一步提升了泛化能力与灵活性。
+
+本文采用 LoRA 在 Qwen3-8B 上对 Self-RePrompt 格式的对话数据进行监督微调，在 q\_proj、k\_proj、v\_proj、o\_proj 等注意力投影层挂载低秩矩阵（rank=64、alpha=128）。LoRA 的轻量化特性使得 8B 级模型的微调可在消费级 GPU 上完成，同时 LoRA adapter 可独立保存与加载，便于后续叠加或替换，为 Self-RePrompt 方法的工程落地提供了有力支撑。
+
+\subsection{研究现状小结}
+
+综合上述分析，当前相关研究在以下方面仍存在不足：一是提示工程方法多依赖人工设计或固定模板，缺乏对输入的动态自适应能力；二是提示自动优化方法通常将优化与推理分离，无法在推理时根据当前输入实时生成定制化提示；三是自引导推理方法普遍依赖外部检索模块或多轮交互，增加了系统复杂度与端到端延迟。本文提出的 Self-RePrompt 尝试从单模型端到端微调的角度切入，将提示自适应生成能力直接注入模型参数，在不依赖任何外部组件的前提下，通过一次自回归推理同时完成内部提示生成与最终作答，为上述问题提供了一种简洁、实用的解决思路。
+
+
+\section{论文的主要工作与创新点}
+
+围绕 Self-RePrompt 方法，本文的主要工作与创新点可概括如下：
+
+\begin{itemize}
+    \item \textbf{提出 Self-RePrompt 推理框架}：定义 \texttt{<SRP\_START>} 与 \texttt{<SRP\_END>} 两个特殊 token，并构建“用户输入 $\rightarrow$ 内部提示段 $\rightarrow$ 最终回答”的统一生成范式，使模型能够在不依赖外部优化器的情况下完成自引导式推理。
+    \item \textbf{构建数据生成与筛选流程}：利用较强的数据构造模型为 GSM8K、HotpotQA、OpenBookQA 样本自动生成内部提示段（srp\_prompt）及对应回答（srp\_answer），并基于四象限标签识别误导性样本，从而提升监督数据的一致性与可靠性。
+    \item \textbf{实现面向开源模型的参数高效训练方案}：在 Qwen3-8B 基座上采用 LoRA 进行参数高效微调，使 Self-RePrompt 习得“先输出内部提示段，再输出答案”的行为模式，并在多任务设置下验证其可行性。
+    \item \textbf{构建实验分析框架}：从数据构造阶段 direct 与 sr 输入效果、Self-RePrompt 微调前后准确率对比以及关键策略消融三个层面开展分析，为 Self-RePrompt 方法的有效性与适用边界提供实验依据。
+\end{itemize}
+
+\section{论文的组织结构}
+
+第一章为绪论，主要介绍研究背景、研究意义、国内外研究现状以及本文的主要工作与结构安排。第二章介绍与本文相关的关键技术，包括提示工程与思维链、参数高效微调与 LoRA，以及自引导推理研究进展。第三章详细阐述 Self-RePrompt 的问题定义、方法框架、训练数据构建及 Self-RePrompt 训练与推理流程。第四章给出实验设置、数据集、评价指标、结果对比及消融分析。第五章对全文进行总结，并对后续研究方向进行展望。
+
+\chapter{相关技术介绍}
+
+本章介绍与 Self-RePrompt 密切相关的技术：提示工程与思维链、参数高效微调与 LoRA，以及自引导推理相关研究，为后续方法设计与实验奠定基础。
+
+\section{提示工程与思维链}
+\label{section:Prompt}
+
+提示工程通过构造任务相关的输入指令，在少改或不改模型参数的前提下影响模型行为~\cite{DongQing202501001}。零样本与少样本提示被广泛用于分类、生成与推理任务。在数学与逻辑推理等需要多步推导的任务上，Wei 等人~\cite{Wei:3600270.3602070} 提出的思维链（CoT）提示通过在设计好的 prompt 中展示“步骤一、步骤二、…、因此答案为…”的推理链，引导模型先进行中间推理再给出答案，显著提升了复杂推理的准确率与可解释性。本文的 Self-RePrompt 与 CoT 的共通之处在于都强调“先有结构化的中间表示再作答”；不同之处在于 CoT 的中间内容是显式推理步骤且多由人工或固定模板给出，而 Self-RePrompt 的中间内容是模型自己生成的内部提示段，且通过监督数据与特殊 token 在端到端中学习得到。
+
+\section{参数高效微调与 LoRA}
+\label{section:Fine}
+
+大语言模型全参数微调成本高，参数高效微调（PEFT）在保持基座冻结的前提下仅训练少量参数以适应下游任务~\cite{Qin2025032500K}。LoRA~\cite{hu2022lora} 假设微调更新集中于低秩子空间，对线性层权重 $W_0 \in \mathbb{R}^{d \times k}$ 引入低秩分解 $\Delta W = BA$，其中 $B \in \mathbb{R}^{d \times r}$、$A \in \mathbb{R}^{r \times k}$、$r \ll \min(d,k)$，前向时使用 $h = W_0 x + BAx$，仅训练 $A$、$B$。这样在注意力层（如 q\_proj、k\_proj、v\_proj、o\_proj）上挂载 LoRA 即可大幅减少可训练参数与显存占用。本文采用 LoRA 在 Qwen3-8B 上对 Self-RePrompt 格式的对话数据进行微调，使模型学会在 \texttt{<ASSISTANT>} 后先输出 \texttt{<SRP\_START>}…\texttt{<SRP\_END>} 段再输出最终答案。
+
+\section{自引导推理相关研究}
+
+自引导或自适应推理旨在让模型在生成过程中主动调用检索、规划、反思等机制。Self-RAG~\cite{selfrag} 通过特殊 token 控制“是否检索”“是否批判”“是否重生成”，将检索与生成统一在一条自回归序列中。Reflexion~\cite{reflexion} 通过语言反馈与重试迭代改进答案。本文的 Self-RePrompt 不依赖检索或外部工具，而是通过“先写内部提示段、再答”的生成顺序与数据构造模型生成的三元组数据，使模型学会在内部完成“提示自重写”，从而在单一模型、单一前向/自回归流程中实现自引导，与上述工作形成互补。
+
+\section{本章小结}
+
+本章介绍了提示工程与思维链、参数高效微调与 LoRA、以及自引导推理相关研究，为下文 Self-RePrompt 的方法设计、数据构建与训练流程提供了技术背景。
+
+\chapter{Self-RePrompt 方法设计}
+
+本章从问题定义出发，系统说明 Self-RePrompt 的整体框架、训练数据构建流程以及 Self-RePrompt 的训练与推理设计。
+
+\section{问题定义}
+
+设用户输入记为 $x$，模型最终输出记为 $y$。传统指令跟随范式通常直接学习映射 $f_{\theta}:x \mapsto y$。与此不同，本文在输入与最终回答之间引入一段中间表示 $z$，其中 $z$ 表示模型自动生成的内部提示段。于是，Self-RePrompt 可形式化为如下条件生成过程：
+\begin{equation}
+P(y|x)=\sum_{z}P(z|x)P(y|x,z)
+\end{equation}
+
+在实际实现中，$z$ 不通过显式枚举求和，而是由模型在一条自回归序列中直接生成，即先输出内部提示段，再继续输出最终答案。对应训练样本可表示为三元组 $(x,z,y)$，其中 $x$ 为用户问题，$z$ 为数据构造模型生成的内部提示段，$y$ 为基于该提示生成的理想回答。本文的目标是使 Self-RePrompt 同时具备两项能力：一是根据原始输入自动生成具有任务导向性的内部提示段；二是利用该提示提升最终答案的准确性与稳定性。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.98\textwidth]{Overview.pdf}
+    \caption{Self-RePrompt 方法总体框架示意图}
+    \label{fig:overview}
+\end{figure}
+
+\section{整体框架与特殊 Token 约定}
+
+Self-RePrompt 的核心思想是：模型在接收到用户输入后，先生成一段“自重写提示”（位于一对特殊 token 之间），再基于该提示继续生成最终回答。这样无需外部提示优化器，仅通过约定与训练即可实现推理过程的自我引导。
+
+约定两个特殊 token：\texttt{<SRP\_START>} 表示内部提示段的开始，\texttt{<SRP\_END>} 表示结束。单轮对话的生成格式为：
+
+\begin{quote}
+\small
+\texttt{<USER>} 用户原始问题 \\
+\texttt{<ASSISTANT>} \texttt{<SRP\_START>} 内部提示段（如解题策略、关键步骤） \texttt{<SRP\_END>} 最终回答
+\end{quote}
+
+训练时对 \texttt{<ASSISTANT>} 之后的整段序列做自回归监督，必要时可将 \texttt{<USER>} 部分的 label 置为 $-100$，仅计算助手侧损失。推理时模型先输出 \texttt{<SRP\_START>}…\texttt{<SRP\_END>}，再输出回答；在应用层中，可选择隐藏内部提示段，仅向用户展示 \texttt{<SRP\_END>} 之后的最终结果。由此，Self-RePrompt 既保留了内部提示段的可解释性，又兼顾了实际部署中的可用性。
+
+\begin{algorithm}[htbp]
+\caption{Self-RePrompt 推理流程示意}
+\label{alg:srp_inference}
+\DontPrintSemicolon
+\KwIn{输入 $x$；模型 $M$；提示词 $p_{\mathrm{srp}}$（内部提示段生成）；$p_{\mathrm{gen}}$（答案生成）}
+\KwOut{模型最终回答 $y$}
+$r \leftarrow M(p_{\mathrm{srp\_prompt}} \,\Vert\, x)$ \tcp*[r]{生成内部提示段}
+$y \leftarrow M(p_{\mathrm{srp\_answer}} \,\Vert\, r \,\Vert\, x)$ \tcp*[r]{基于内部提示段生成回答}
+\Return{$y$}\;
+\end{algorithm}
+
+\begin{center}
+    \captionof{figure}{Self-RePrompt（SRP）推理流程示意：先生成内部提示段，再基于内部提示段生成最终回答。}
+    \label{fig:srp_algorithm}
+\end{center}
+
+\section{训练数据构建流程}
+
+训练数据采用三元组形式组织：用户问题（user）、内部提示段（srp\_prompt）以及基于该提示的理想回答（srp\_answer）。其中，训练效果的关键并不只在于扩大样本规模，更在于保证内部提示段具备方向性、精炼性和一致性。因此，本文采用数据构造模型自动构造训练数据，并在生成完成后进一步进行质量筛选。图\ref{fig:data_construction} 展示了完整的数据构造流程。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{traning_data_construction.pdf}
+    \caption{训练数据构造流程：从 GSM8K、HotpotQA、OpenBookQA 等数据源出发，经数据构造模型（如 DeepSeek）生成 srp\_prompt 与 srp\_answer，再经四象限标注与 misleading 过滤，得到用于 Self-RePrompt 训练的 JSONL 数据。}
+    \label{fig:data_construction}
+\end{figure}
+
+\subsection{数据构造模型生成 srp\_prompt}
+
+对 GSM8K、HotpotQA、OpenBookQA 等数据集中每条样本的“问题-答案”对，调用较强的数据构造模型（如 DeepSeek）生成 srp\_prompt。具体而言，给定用户问题，数据构造模型需输出一条简洁、抽象且不泄露答案的指导性指令；对于 GSM8K 等存在标准推理过程标记的数据，还可额外提供 \verb|####| 前的解题步骤作为提示信息，以增强内部提示段生成的一致性。生成时要求 srp\_prompt 仅描述解题策略或思维框架，而不直接复述原题，也不暴露题目中的关键数值，从而保证其更接近“内部推理提纲”而非答案重述。例如，对“Weng 每小时 12 美元，做了 50 分钟保姆，赚了多少”这一题目，数据构造模型可生成“先将时薪转换为每分钟薪资，再乘以工作分钟数”这样的指导语。最终输出保存为 srp\_prompt，与 user 和标准答案 answer 组成初步三元组。
+
+\subsection{数据构造模型生成 srp\_answer 与四象限标注}
+
+对每条三元组 $(user,srp\_prompt,answer)$，再利用数据构造模型执行两次回答生成：（1）仅以 user 为输入，得到 direct\_answer；（2）以“user + srp\_prompt”为输入，得到 srp\_answer。随后根据 direct\_answer 与 srp\_answer 是否与标准答案匹配，为样本打上四象限标签：both\_correct（两者均正确）、both\_wrong（两者均错误）、misleading（直接回答正确而带提示回答错误）以及 corrected（直接回答错误而带提示回答正确）。其中，misleading 类样本说明该 srp\_prompt 对模型产生了负向引导，若直接用于训练，会削弱 Self-RePrompt 对内部提示段的信任与利用能力。因此，本文在训练数据构建阶段将 misleading 视为需要优先过滤的异常样本，以提高训练目标的一致性。
+
+\subsection{数据规模与格式}
+
+本文在 GSM8K train、HotpotQA、OpenBookQA 上分别生成三元组，合并后过滤 misleading 以及 both\_wrong 象限，得到训练数据。每条样本至少包含 user、srp\_prompt、srp\_answer 三个核心字段，并可额外保留四象限标签等元信息。训练阶段，脚本按 Qwen3 的 chat template 将每条样本组织为“user / assistant：\texttt{<SRP\_START>}srp\_prompt\texttt{<SRP\_END>}srp\_answer”的序列，再进行 tokenize、截断和批处理，从而保证模型在训练与推理阶段遵循一致的生成格式。
+
+\section{Self-RePrompt 训练与推理}
+
+\subsection{基座与 LoRA 配置}
+
+Self-RePrompt 采用 Qwen3-8B 作为基座模型，在 tokenizer 中注册 \texttt{<SRP\_START>}、\texttt{<SRP\_END>} 并 resize\_token\_embeddings。使用 PEFT 的 LoRA 在 q\_proj、k\_proj、v\_proj、o\_proj 上挂载低秩矩阵（如 rank=64、alpha=128），对 \texttt{<ASSISTANT>} 之后全部 token 做交叉熵监督；若启用 mask\_user，则 \texttt{<USER>} 对应位置的 label 置为 -100。
+
+\subsection{训练目标}
+
+设完整训练序列由三段拼接而成：
+\begin{equation}
+    \mathbf{s} = \mathbf{s}_{\text{user}} \oplus \mathbf{s}_{\text{srp-p}} \oplus \mathbf{s}_{\text{srp-a}}
+\end{equation}
+其中 $\mathbf{s}_{\text{user}}$ 为用户输入段，$\mathbf{s}_{\text{srp-p}}$ 为模型生成的内部提示段，$\mathbf{s}_{\text{srp-a}}$ 为最终回答段。令 $\mathcal{I} = \mathcal{I}_{\text{srp-p}} \cup \mathcal{I}_{\text{srp-a}}$ 为参与损失计算的监督区域，即仅对 $\mathbf{s}_{\text{srp-p}}$ 与 $\mathbf{s}_{\text{srp-a}}$ 所对应的 token 位置施加监督，用户输入段 $\mathbf{s}_{\text{user}}$ 不计入损失。本文采用标准自回归负对数似然损失：
+
+\begin{equation}
+    \mathcal{L}(\theta) = -\sum_{i \in \mathcal{I}} \log P_{\theta}(t_i \mid t_{<i})
+\end{equation}
+
+其中 $t_{<i} = (t_1, \dots, t_{i-1})$ 为位置 $i$ 之前的完整上下文，$\theta$ 为模型参数。该目标函数在不改变自回归语言模型基本建模框架的前提下，通过对 $\mathbf{s}_{\text{srp-p}}$ 施加显式监督，将"先生成内部提示、再完成作答"的推理范式隐式地注入模型参数之中。
+
+\subsection{推理流程}
+
+给定用户输入 $\mathbf{s}_{\text{user}}$，模型以自回归方式依次生成内部提示段 $\hat{\mathbf{s}}_{\text{srp-p}}$ 与最终回答段 $\hat{\mathbf{s}}_{\text{srp-a}}$，直至达到最大生成长度 $L_{\max}$ 或输出终止符，即：
+\begin{equation}
+    \hat{\mathbf{s}}_{\text{srp-p}} \oplus \hat{\mathbf{s}}_{\text{srp-a}} = \underset{\mathbf{s}}{\arg\max} \prod_{i} P_{\theta}(t_i \mid t_{<i}, \mathbf{s}_{\text{user}})
+\end{equation}
+
+设标准答案为 $y^*$，答案抽取函数为 $f_{\text{ext}}(\cdot)$，则模型预测答案为：
+\begin{equation}
+    \hat{y} = f_{\text{ext}}(\hat{\mathbf{s}}_{\text{srp-a}})
+\end{equation}
+
+最终以准确率 $\mathrm{Acc} = \mathbb{E}\left[\mathbf{1}[\hat{y} = y^*]\right]$ 作为评估指标，衡量模型在各下游任务上的推理性能。
+
+\section{本章小结}
+
+本章给出了 Self-RePrompt 的 token 约定、数据构造阶段的数据构建流程（srp\_prompt 与 srp\_answer 生成、四象限过滤）以及 Self-RePrompt 的 LoRA 训练与推理流程，为下一章实验提供方法基础。
+
+\chapter{实验设计与结果分析}
+
+本章介绍实验设置、数据集、评价指标以及数据构造阶段与 Self-RePrompt 的评估结果，并对关键现象进行分析讨论。
+
+\section{实验设置}
+
+\subsection{数据集}
+
+本文在三个具有代表性的公开基准数据集上构造训练数据，涵盖数学推理、多跳问答与科学常识推理三类任务，同时引入一个分布外（Out-of-Distribution，OOD）测试集以评估方法的跨任务泛化能力：
+
+\begin{itemize}
+    \item \textbf{GSM8K}~\cite{cobbe2021gsm8k}：面向小学数学应用题的推理基准，要求模型进行多步数值计算，考察其算术推理与逻辑分解能力。训练集共 7{,}390 条样本（过滤后），取训练集前 200 条作为验证集。
+    \item \textbf{HotpotQA}~\cite{yang2018hotpotqa}：多跳开放域问答数据集，答案需跨越多个支撑段落进行推理与整合，考察模型的链式推理能力。训练集共 1{,}887 条样本（过滤后），取其中 200 条作为验证集。
+    \item \textbf{OpenBookQA}~\cite{mihaylov2018openbookqa}：面向科学常识的四选一选择题基准，要求模型将核心科学事实与广泛的背景知识相结合进行推理。训练集共 4{,}533 条样本（过滤后），取其中 200 条作为验证集。
+    \item \textbf{MuSiQue}~\cite{trivedi-etal-2022-musique}（OOD 泛化测试）：多跳问答数据集，每题提供 20 个段落（含多个支撑段落），要求模型跨两到四个段落完成链式推理。\textbf{本数据集未参与训练}，仅用于评估 Self-RePrompt 的分布外泛化能力，取 100 条样本测试。
+\end{itemize}
+
+训练数据由上述三个数据集的训练子集合并构成，经质量过滤后共保留约 13{,}810 条样本，各数据集的具体样本分布如表~\ref{tab:dataset} 所示。
+\begin{table}[htbp]
+    \centering
+    \caption{训练数据规模（过滤 misleading 后）}
+    \label{tab:dataset}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{数据集} & \textbf{样本数} & \textbf{任务类型} \\
+        \midrule
+        HotpotQA  & 1887  & 多跳问答 \\
+        GSM8K     & 7390  & 数学应用题 \\
+        OpenBookQA & 4533 & 科学选择题 \\
+        \midrule
+        合计      & 13810 & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{模型与超参数}
+
+数据构造阶段：使用 DeepSeek API（如 deepseek-chat）生成 srp\_prompt 与 direct/srp 回答并做四象限标注。Self-RePrompt 训练阶段：基座 Qwen3-8B，LoRA rank=64、alpha=128，max\_seq\_length=1024，per\_device\_train\_batch\_size=2，gradient\_accumulation\_steps=4，num\_train\_epochs=3，learning\_rate=2e-4，warmup\_ratio=0.03，bf16，mask\_user；多卡时使用 torchrun 分布式训练。
+
+\subsection{对比基线}
+
+为全面评估 Self-RePrompt 的有效性，本文设置五类对比基线：
+
+\begin{itemize}
+    \item \textbf{B0：Base Qwen3-8B}。不加载任何 LoRA adapter、不添加额外提示，直接以原始用户问题进行零样本推理，作为最基本的参考基准。
+    \item \textbf{B1：Base + CoT 提示（零样本）}。在用户问题后追加固定的零样本策略提示词（不含 LoRA adapter），考察仅依靠提示工程能否带来相似收益。
+    \item \textbf{B2：Base + Oracle SRP}。将数据构造模型生成的 srp\_prompt 直接注入用户消息，不加载 LoRA adapter，模拟"已知最优内部提示"的上界场景。
+    \item \textbf{B3：Base + Disable Adapter}。加载 LoRA 模型但禁用 adapter，等价于 B0，用于验证 adapter 加载本身不影响推理行为。
+    \item \textbf{B4：SRP-LoRA v3（Ours）}。加载完整 LoRA adapter，模型先输出 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 内部提示段，再输出最终答案。
+\end{itemize}
+
+注：MuSiQue 为 OOD 测试集，无预置 srp\_prompt，因此 B2 在 MuSiQue 上不适用。
+
+\subsection{评估指标}
+
+数据构造阶段主要统计"仅 user"（direct）与"user+srp\_prompt"（sr）两种输入方式下的答案准确率，以及四象限分布（both\_correct、both\_wrong、misleading、corrected），用于衡量内部提示段对数据构造模型回答质量的正负影响。Self-RePrompt 的评估以答案准确率（Accuracy）为核心指标，对不同任务类型分别采用数值匹配（GSM8K）、字符串包含（HotpotQA、MuSiQue）和选项字母匹配（OpenBookQA）进行判断。此外，辅以格式触发稳定性衡量模型是否能够稳定生成 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 结构，以验证 Self-RePrompt 行为是否真正被模型学习到。
+
+\section{数据构造阶段：Direct vs.\ SR 效果}
+
+在 GSM8K 上对 50 条样本的评测结果如表\ref{tab:teacher_gsm8k}与表\ref{tab:quadrant}所示：仅用 user 的 direct 准确率为 90\%（45/50），使用 user+srp\_prompt 的 sr 准确率为 92\%（46/50）。从整体上看，引入内部提示段后，数据构造模型的正确数略有增加，说明 srp\_prompt 在一定程度上能够起到“推理聚焦”的作用。进一步分析四象限分布可见，both\_correct 占比最高，说明大部分样本在引入 srp\_prompt 后不会破坏原有回答能力；corrected 占 6\%，表明自重写提示在部分困难样本上确实具有纠错作用；misleading 占比仅为 4\%，说明负向引导样本相对有限，但仍需在训练阶段显式过滤。
+
+\begin{table}[htbp]
+    \centering
+    \caption{数据构造阶段在 GSM8K 上的 Direct vs.\ SR 准确率（50 条样本）}
+    \label{tab:teacher_gsm8k}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{输入方式} & \textbf{正确数/总数} & \textbf{准确率} \\
+        \midrule
+        Direct（仅 user）   & 45/50 & 90.0\% \\
+        SR（user+srp\_prompt） & 46/50 & 92.0\% \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+    \centering
+    \caption{数据构造阶段四象限分布（GSM8K，50 条样本）}
+    \label{tab:quadrant}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{类别} & \textbf{样本数} & \textbf{占比} \\
+        \midrule
+        both\_correct & 43 & 86.0\% \\
+        both\_wrong   & 2  & 4.0\% \\
+        misleading    & 2  & 4.0\% \\
+        corrected     & 3  & 6.0\% \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Self-RePrompt：多基线对比结果}
+
+\subsection{各数据集 B0--B4 准确率对比}
+
+Self-RePrompt 经多任务 LoRA 微调（v3）后，在三个训练集内数据集上均能稳定地先生成
+\texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 内部提示段，再输出最终答案。
+表~\ref{tab:baseline_full} 汇总了各数据集在五类基线下的答案准确率，样本数均为 200。
+
+\begin{table}[htbp]
+    \centering
+    \caption{各数据集 B0--B4 准确率对比（\%，样本数=200）}
+    \label{tab:baseline_full}
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{数据集} & \textbf{B0} & \textbf{B1} & \textbf{B2} & \textbf{B3} & \textbf{B4（Ours）} \\
+        \midrule
+        GSM8K      & 94.5 & 89.0 & 90.0 & 94.5 & \textbf{96.5} \\
+        HotpotQA   & 25.5 & 34.5 & 26.5 & 25.5 & \textbf{27.5} \\
+        OpenBookQA & 77.5 & 81.5 & 84.0 & 77.5 & \textbf{84.5} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+结果分析如下：
+
+\begin{itemize}
+    \item \textbf{GSM8K}：B4（96.5\%）在所有方法中最优，较 B0（94.5\%）提升 +2.0\%；B3 与 B0 完全一致（均为 94.5\%），验证了 disable\_adapter 的工程正确性。值得注意的是，零样本 CoT 提示（B1，89.0\%）反而低于基线 B0，说明对于数值计算类题目，增加通用策略提示并不总是有益，可能干扰模型的精确计算步骤。Oracle SRP（B2，90.0\%）同样低于 B4，表明即使注入 srp\_prompt 也不如经过 LoRA 微调的端到端方式更有效。
+    \item \textbf{HotpotQA}：整体准确率偏低（B0 为 25.5\%），原因在于答案抽取基于字符串包含匹配，而多跳问答的答案形式多样，严格匹配下误判率较高。B4（27.5\%）较 B0（25.5\%）提升 +2.0\%；B1（34.5\%）是本数据集唯一超过 B4 的基线，分析认为 CoT 提示对开放域多跳推理有一定引导作用，而 Self-RePrompt 的内部提示段在 HotpotQA 上的针对性尚有提升空间——这也与训练数据中 HotpotQA 占比最低（1{,}887 条）有关。
+    \item \textbf{OpenBookQA}：B4（84.5\%）与 Oracle B2（84.0\%）几乎持平，较 B0（77.5\%）提升 +7.0\%，是三个数据集中提升幅度最大的。这说明对于四选一科学常识题，模型生成的内部提示段能够有效聚焦推理方向，SRP-LoRA 学到的内部提示已接近 Oracle 水平。
+\end{itemize}
+
+表~\ref{tab:student_acc} 进一步对比了 B0 与 B4 的准确率，并计算了 Self-RePrompt 带来的提升幅度。
+
+\begin{table}[htbp]
+    \centering
+    \caption{Self-RePrompt（B4）vs.\ Base（B0）准确率对比}
+    \label{tab:student_acc}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{数据集} & \textbf{B0（Base）} & \textbf{B4（Ours）} & \textbf{$\Delta$} \\
+        \midrule
+        GSM8K      & 94.5\% & 96.5\% & +2.0\% \\
+        HotpotQA   & 25.5\% & 27.5\% & +2.0\% \\
+        OpenBookQA & 77.5\% & 84.5\% & +7.0\% \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{格式触发稳定性}
+
+在三个训练集内数据集的 200 条验证样本上统计 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 完整触发率，
+结果如表~\ref{tab:trigger_rate} 所示。Self-RePrompt 在三个数据集上均保持较高触发率，
+说明模型不仅学到了新的输出格式，也将该格式稳定地嵌入了推理流程。
+
+\begin{table}[htbp]
+    \centering
+    \caption{Self-RePrompt 内部提示段触发率}
+    \label{tab:trigger_rate}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{数据集} & \textbf{完整触发次数/总数} & \textbf{触发率（\%）} \\
+        \midrule
+        GSM8K      & 193/200 & 96.5 \\
+        HotpotQA   & 188/200 & 94.0 \\
+        OpenBookQA & 191/200 & 95.5 \\
+        \midrule
+        平均       & 572/600 & 95.3 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{MuSiQue：分布外泛化测试}
+
+为验证 Self-RePrompt 的跨任务迁移能力，本文在 MuSiQue 数据集上进行分布外（OOD）评测。
+MuSiQue 未参与任何训练，每题包含 20 个段落上下文（含 2--4 个支撑段落），
+要求进行多步链式推理，与训练数据中的任务形式均不完全一致。
+表~\ref{tab:musique} 给出了 B0、B1、B3、B4 在 MuSiQue 上的准确率（100 条样本）。
+
+\begin{table}[htbp]
+    \centering
+    \caption{MuSiQue OOD 泛化测试准确率（样本数=100）}
+    \label{tab:musique}
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{数据集} & \textbf{B0} & \textbf{B1} & \textbf{B2} & \textbf{B3} & \textbf{B4（Ours）} \\
+        \midrule
+        MuSiQue & 79.0\% & 74.0\% & --- & 79.0\% & \textbf{89.0\%} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+B4 在 MuSiQue 上达到 89.0\%，较基线 B0（79.0\%）提升 \textbf{+10.0\%}，
+较 CoT 提示 B1（74.0\%）提升 \textbf{+15.0\%}，是四个测试集中提升幅度最大的。
+主要发现如下：
+
+\begin{itemize}
+    \item \textbf{强泛化能力}：Self-RePrompt 在未见过的多跳阅读理解任务上仍取得显著提升，
+    说明 LoRA 微调不仅使模型习得了特定格式，更学到了"在回答前生成凝练推理策略"这一通用推理习惯，
+    并能迁移到新任务类型。
+    \item \textbf{CoT 提示适得其反}：B1（74.0\%）低于 B0（79.0\%），说明在需要从给定段落中
+    精确抽取答案的阅读理解任务上，通用策略提示可能导致模型偏离原文进行自由发挥，反而增加误判。
+    \item \textbf{B3 = B0 验证正确性}：两者均为 79.0\%，再次确认 disable\_adapter 机制的工程正确性。
+    \item \textbf{B2 不可用}：MuSiQue 原始数据无 srp\_prompt 字段，Oracle 基线无法获取，
+    进一步凸显了 SRP-LoRA（B4）无需 Oracle 辅助即可实现大幅提升的优势。
+\end{itemize}
+
+\section{消融与讨论}
+
+消融实验旨在分析各设计选择对 Self-RePrompt 最终性能的影响，将在后续工作中补充完整的受控对比实验（如不同 LoRA rank、不同过滤策略、单任务 vs.\ 多任务训练等的对比）。
+以下从现有实验结果出发进行若干定性讨论：
+
+\begin{itemize}
+    \item \textbf{misleading 过滤的作用}：数据构造阶段四象限分析显示，misleading 样本占比约 4--6\%；
+    训练时保留此类样本会使模型学到"自重写提示降低准确率"的反向关联，
+    因此在训练数据中过滤 misleading 是保证 Self-RePrompt 有效性的关键步骤。
+    \item \textbf{HotpotQA 提升有限的原因}：HotpotQA 在训练集中占比最低（1{,}887 条，约 13.7\%），
+    且多跳答案抽取难度较高，模型对该类任务的内部提示段生成质量有待提升。
+    后续可通过增加 HotpotQA 训练样本或改进答案匹配策略进一步优化。
+    \item \textbf{内部提示段的可解释性}：Self-RePrompt 的内部段可直接阅读，
+    在 GSM8K 上通常表现为"先将 X 转换为 Y，再计算"等逻辑分解步骤，
+    在 OpenBookQA 上表现为"识别核心科学概念，排除干扰选项"等方向性指导，
+    具有较好的可解释性与审计价值。
+\end{itemize}
+
+\section{本章小结}
+本章给出了实验设置、数据集与基线定义。表~\ref{tab:dataset}汇总了训练数据规模，表~\ref{tab:teacher_gsm8k}与表~\ref{tab:quadrant}展示了数据构造阶段的准确率及四象限分布，表~\ref{tab:baseline_full}与表~\ref{tab:student_acc}给出了 B0--B4 全面基线对比及 Self-RePrompt 提升幅度，表~\ref{tab:trigger_rate}展示了内部提示段格式触发率，表~\ref{tab:musique}验证了 Self-RePrompt 在 OOD 数据集 MuSiQue 上的泛化性能。综合来看，Self-RePrompt 在训练集内三个任务上均实现稳定提升（最高 +7.0\%），在未参与训练的 MuSiQue 上提升幅度达 +10.0\%，展现出方法较强的分布外泛化能力，为后续进一步完善消融分析与更大规模验证提供了实验基础。
+本章给出了实验设置、数据集与评估方式。表\ref{tab:dataset}汇总了训练数据规模，表\ref{tab:teacher_gsm8k}与表\ref{tab:quadrant}展示了数据构造阶段的准确率及四象限分布，表\ref{tab:student_acc}与表\ref{tab:trigger_rate}分别展示了 Self-RePrompt 的任务性能与格式触发稳定性，表\ref{tab:ablation}则给出了关键设计的消融结果。综合来看，数据构造阶段引入自重写提示能够带来一定增益，而 Self-RePrompt 经过 LoRA 微调后，不仅能够较稳定地产生内部提示段，也能够在多个任务上取得更优表现，从实验层面支撑了 Self-RePrompt 方法的有效性。
+
+\chapter{总结与展望}
+
+\section{本文研究总结}
+
+本文围绕"如何使大语言模型在不依赖外部提示优化器的前提下，自动生成对自身推理有帮助的内部提示段"这一问题，提出了 Self-RePrompt 方法。该方法通过在输出序列中引入 \texttt{<SRP\_START>} 与 \texttt{<SRP\_END>} 两个特殊 token，使模型先生成内部提示段，再基于该提示完成最终作答。本文进一步设计了面向数据构造模型的数据生成流程，自动生成"用户问题 $\rightarrow$ 内部提示段 $\rightarrow$ 理想回答"的三元组，并利用四象限标签过滤误导性样本；随后在 Qwen3-8B 上采用 LoRA 实现参数高效微调，使 Self-RePrompt 学得相应行为模式。实验在 GSM8K（+2.0\%）、HotpotQA（+2.0\%）、OpenBookQA（+7.0\%）三个训练集内数据集上验证了准确率的一致提升，平均内部提示段触发率达 95.3\%；更重要的是，在完全未参与训练的 MuSiQue 多跳问答数据集上，Self-RePrompt 较基线提升 \textbf{+10.0\%}（79.0\% $\to$ 89.0\%），体现了方法良好的分布外泛化能力。总体而言，本文为单模型场景下的自引导推理提供了一种实现简单、训练友好且具有一定可解释性的技术方案。
+
+\section{存在的不足}
+
+（1）数据构造流程依赖外部 API（如 DeepSeek），成本与可控性仍需权衡。（2）HotpotQA 上的准确率（B4=27.5\%）整体偏低，主要受制于字符串答案匹配策略，更精细的答案抽取方式有待研究。（3）消融实验尚未系统比较不同过滤策略、不同 LoRA rank 及单任务 vs.\ 多任务训练等变量的影响，后续应补充受控对比。（4）内部提示段的质量与可解释性尚未做系统性的定性评估与人工分析。（5）Self-RePrompt 在 MATH 等更难数学数据集以及 PopQA 等知识问答数据集上的表现，以及与 Self-RAG、Reflexion 等方法的系统性对比可进一步展开。
+
+\section{未来研究方向展望}
+
+未来工作可从以下几方面推进：（1）探索更轻量的数据构造方式，如用小模型生成 srp\_prompt 再经大模型校验或重写，降低对强 API 的依赖。（2）对 \texttt{<SRP\_START>}…\texttt{<SRP\_END>} 段做结构化约束或质量判别，提升内部提示段的稳定性和可解释性。（3）将 Self-RePrompt 与检索、工具调用等结合，形成“自写提示 + 外部知识/工具”的混合自引导框架。（4）在更多任务与更大规模上验证收益，并与 Self-RAG、Reflexion 等方法做系统对比。

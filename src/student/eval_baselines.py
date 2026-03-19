@@ -73,6 +73,15 @@ DATASET_CONFIGS = {
         "srp_key": "sr_prompt",
         "type": "choice",
     },
+    "musique": {
+        "file": "data/raw/sample/musique_ans_train.jsonl",
+        "type": "musique",
+        # user/gold 由 load_data 内部从 question/answer/paragraphs 字段构造
+    },
+    "musique_full": {
+        "file": "data/raw/musique_ans_train.jsonl",
+        "type": "musique",
+    },
 }
 
 
@@ -141,37 +150,87 @@ def extract_choice(text: str) -> str:
     return matches[-1].upper() if matches else ""
 
 
-def match_answer(pred: str, gold: str, dtype: str) -> bool:
+def match_answer(pred: str, gold, dtype: str) -> bool:
     if dtype == "numeric":
         p = extract_gsm8k_answer(pred).replace(",", "")
-        g = gold.strip().replace(",", "")
+        g = str(gold).strip().replace(",", "")
         if not p or not g: return False
         try: return float(p) == float(g)
         except ValueError: return p == g
     elif dtype == "choice":
         p = extract_choice(pred)
-        m = re.match(r"([A-D])", gold.strip())
+        m = re.match(r"([A-D])", str(gold).strip())
         return bool(p and m and p == m.group(1).upper())
+    elif dtype == "musique":
+        # gold 是 {"answer": str, "aliases": list}
+        text = re.split(r"<\|im_end\|>", pred)[0].strip().lower()
+        main_ans = str(gold.get("answer", "")).strip().lower()
+        if main_ans and main_ans in text:
+            return True
+        for alias in gold.get("aliases", []):
+            a = str(alias).strip().lower()
+            if a and a in text:
+                return True
+        return False
     else:
         p = extract_hotpot_answer(pred).lower()
-        g = gold.strip().lower()
+        g = str(gold).strip().lower()
         return g in p or p in g
 
 
 # ── 数据加载 ─────────────────────────────────────────────────────
 
+def _format_musique_user(obj: dict) -> str:
+    """
+    MuSiQue user 消息格式：把 is_supporting=True 的段落作为上下文，
+    然后接多跳问题。
+    """
+    paras = obj.get("paragraphs", [])
+    supporting = [p for p in paras if p.get("is_supporting")]
+    # 去重（按 title）
+    seen = set()
+    ctx_parts = []
+    for p in supporting:
+        title = p.get("title", "")
+        text = p.get("paragraph_text", "")
+        key = title.strip()
+        if key not in seen and text.strip():
+            seen.add(key)
+            ctx_parts.append(f"**{title}**\n{text.strip()}")
+    ctx = "\n\n".join(ctx_parts)
+    question = obj.get("question", "").strip()
+    if ctx:
+        return f"Use the following passages to answer the question.\n\n{ctx}\n\nQuestion: {question}"
+    return question
+
+
 def load_data(cfg: dict, max_samples: int, seed: int) -> list:
     data = []
+    is_musique = cfg.get("type") == "musique"
+
     with open(cfg["file"], encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line: continue
             obj = json.loads(line)
-            user = (obj.get(cfg["user_key"]) or "").strip()
-            gold = (obj.get(cfg["gold_key"]) or "").strip()
-            sr_prompt = (obj.get(cfg.get("srp_key", "sr_prompt")) or "").strip()
+
+            if is_musique:
+                if not obj.get("answerable", True):
+                    continue
+                user = _format_musique_user(obj)
+                gold = {
+                    "answer": obj.get("answer", ""),
+                    "aliases": obj.get("answer_aliases", []),
+                }
+                sr_prompt = ""
+            else:
+                user = (obj.get(cfg.get("user_key", "user")) or "").strip()
+                gold = (obj.get(cfg.get("gold_key", "answer")) or "").strip()
+                sr_prompt = (obj.get(cfg.get("srp_key", "sr_prompt")) or "").strip()
+
             if user and gold:
                 data.append({"user": user, "gold": gold, "sr_prompt": sr_prompt})
+
     random.seed(seed)
     random.shuffle(data)
     return data[:max_samples]
@@ -273,7 +332,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="SRP baseline comparison")
     p.add_argument("--base_model", default="model/Qwen3-8B")
     p.add_argument("--lora_dir", default="outputs/qwen3_sr_lora_v3")
-    p.add_argument("--dataset", choices=list(DATASET_CONFIGS), default="gsm8k")
+    p.add_argument("--dataset", choices=list(DATASET_CONFIGS), default="musique")
     p.add_argument("--max_samples", type=int, default=200)
     p.add_argument("--max_new_tokens", type=int, default=4096)
     p.add_argument("--device", default="cuda:0")
