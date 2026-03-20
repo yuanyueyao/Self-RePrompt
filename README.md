@@ -144,12 +144,26 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 - **`src/student/`**：Student 训练与评测。
   - `train_qwen3_sr_lora.py`：Qwen3-8B + LoRA 训练，支持多 JSONL 合并、按 `quadrant` 过滤。
   - `eval_lora_accuracy.py`：对比 base 与 LoRA 的准确率，支持 HotpotQA、GSM8K、OpenBookQA、MATH。
-- **`scripts/`**：数据下载（如 `save_math_datasets.py`、`download_qwen3_8b.py`）、训练入口 `train_v3.sh` 等。
+- **`scripts/`**：数据下载（`download_qwen3_8b.py`、`download_qwen3_8b_base.py`）、训练 `train_v3.sh` / `train_v3_base.sh`、`run_eval_base_example.sh` 等。
 
 ## 环境与依赖
 
 - Python 3.10+，建议使用 conda 环境。
 - 主要依赖：`torch`、`transformers`、`peft`、`datasets`。基座模型为 **Qwen3-8B**（需自行下载到 `model/Qwen3-8B` 或使用 HuggingFace 名称）。
+
+### Qwen3-8B-Base（预训练底座，对照实验）
+
+- **与 Instruct 版区别**：`Qwen/Qwen3-8B-Base` 为预训练权重，对话与指令跟随通常弱于 `Qwen/Qwen3-8B`；**在 Base 上训练的 LoRA 不能加载到 Instruct 上，反之亦然**。
+- **下载**：`python scripts/download_qwen3_8b_base.py` → 保存到 `model/Qwen3-8B-Base`。
+- **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。
+- **评测**：显式指定基座与 adapter，例如：
+  ```bash
+  bash scripts/run_eval_base_example.sh gsm8k 200
+  # 或
+  python -u src/student/eval_lora_accuracy.py --base_model model/Qwen3-8B-Base \
+      --lora_dir outputs/qwen3_sr_lora_v3_base --dataset gsm8k --max_samples 200
+  ```
+- Base 仍使用 tokenizer 的 `chat_template`（与官方仓库一致）；若后续官方变更导致模板缺失，需在训练/评测脚本中单独适配。
 
 ## 快速开始
 

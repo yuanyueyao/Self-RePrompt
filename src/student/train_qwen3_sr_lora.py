@@ -102,7 +102,10 @@ def parse_args() -> argparse.Namespace:
         "--model_name_or_path",
         type=str,
         default="model/Qwen3-8B",
-        help="Base Qwen3-8B model path (local model/Qwen3-8B or HF Qwen/Qwen3-8B).",
+        help=(
+            "基座路径：Instruct 用 model/Qwen3-8B 或 Qwen/Qwen3-8B；"
+            "预训练底座用 model/Qwen3-8B-Base 或 Qwen/Qwen3-8B-Base（需单独训练 LoRA，不可混用 adapter）。"
+        ),
     )
     parser.add_argument(
         "--train_file",
