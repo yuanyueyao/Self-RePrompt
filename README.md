@@ -158,10 +158,11 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 - **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。过滤规则与 `train_v3.sh` 相同：默认 **`misleading` 与 `both_wrong`**（可用 `FILTER_QUADRANT=...` 覆盖）。
 - **评测**：显式指定基座与 adapter，例如：
   ```bash
-  bash scripts/run_eval_base_example.sh gsm8k 200
+  bash scripts/run_eval_base_example.sh gsm8k 200   # 默认 8 卡并行（`GPUS=0,1,...` 可调）
   # 或
   python -u src/student/eval_lora_accuracy.py --base_model model/Qwen3-8B-Base \
-      --lora_dir outputs/qwen3_sr_lora_v3_base --dataset gsm8k --max_samples 200
+      --lora_dir outputs/qwen3_sr_lora_v3_base --dataset gsm8k --max_samples 200 \
+      --gpus 0,1,2,3,4,5,6,7
   ```
 - Base 仍使用 tokenizer 的 `chat_template`（与官方仓库一致）；若后续官方变更导致模板缺失，需在训练/评测脚本中单独适配。
 
