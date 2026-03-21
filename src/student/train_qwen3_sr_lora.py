@@ -76,7 +76,7 @@ class TrainConfig:
     model_name_or_path: str
     train_file: str
     output_dir: str
-    filter_quadrant: str = "misleading"
+    filter_quadrant: str = "misleading,both_wrong"
     max_seq_length: int = 1024
     mask_user: bool = False
     lora_r: int = 64
@@ -120,9 +120,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--filter_quadrant",
         type=str,
-        default="misleading",
+        default="misleading,both_wrong",
         help="逗号分隔的 quadrant 值，这些样本将被过滤掉。"
-             "默认过滤 'misleading'（sr_prompt 误导模型的样本）。"
+             "默认过滤 misleading 与 both_wrong（与 train_v3.sh / train_v3_base.sh 一致）。"
              "设为空字符串则不过滤。",
     )
     parser.add_argument(
@@ -228,7 +228,7 @@ def load_jsonl_dataset(train_files: str, filter_quadrants: set) -> Dataset:
 
     Args:
         train_files: 逗号分隔的文件路径字符串。
-        filter_quadrants: 需要过滤掉的 quadrant 值集合（如 {"misleading"}）。
+        filter_quadrants: 需要过滤掉的 quadrant 值集合（如 {"misleading", "both_wrong"}）。
     """
     paths = [p.strip() for p in train_files.split(",") if p.strip()]
     records: List[Dict[str, str]] = []

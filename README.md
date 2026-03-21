@@ -103,7 +103,7 @@
 
 - **概念格式**：`<USER> U <ASSISTANT> <SRP_START> P* <SRP_END> A*`
 - **本仓库实现**：使用 Qwen3 的 `apply_chat_template`，`user` 角色填 `U`，`assistant` 角色填 `<SRP_START> P* <SRP_END> A*`；可选 `--mask_user` 只对 assistant 部分算 loss。
-- **数据文件**：JSONL 每行 `{"user": "U", "sr_prompt": "P*", "srp_answer": "A*"}`，可选字段 `quadrant` 用于过滤误导样本（如 `misleading`）。
+- **数据文件**：JSONL 每行 `{"user": "U", "sr_prompt": "P*", "srp_answer": "A*"}`，可选字段 `quadrant`；训练默认过滤 `misleading` 与 `both_wrong`（`--filter_quadrant` 可改）。
 
 Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；Student 在推理时对用户输入先生成 `<SRP_START>…<SRP_END>` 段，再生成最终回答。
 
@@ -155,7 +155,7 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 
 - **与 Instruct 版区别**：`Qwen/Qwen3-8B-Base` 为预训练权重，对话与指令跟随通常弱于 `Qwen/Qwen3-8B`；**在 Base 上训练的 LoRA 不能加载到 Instruct 上，反之亦然**。
 - **下载**：`python scripts/download_qwen3_8b_base.py` → 保存到 `model/Qwen3-8B-Base`。
-- **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。默认过滤 **`misleading` 与 `both_wrong`**（可用 `FILTER_QUADRANT=misleading bash scripts/train_v3_base.sh` 等覆盖）。
+- **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。过滤规则与 `train_v3.sh` 相同：默认 **`misleading` 与 `both_wrong`**（可用 `FILTER_QUADRANT=...` 覆盖）。
 - **评测**：显式指定基座与 adapter，例如：
   ```bash
   bash scripts/run_eval_base_example.sh gsm8k 200
@@ -171,11 +171,11 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
    - 原始数据放在 `data/raw/`（如通过 `scripts/save_math_datasets.py` 下载 MATH/GSM8K）。  
    - 运行 teacher 脚本生成 `data/srp_prompt_with_answer/*.jsonl`（每行含 `user`、`sr_prompt`、`srp_answer`、`quadrant` 等）。
 
-2. **训练（v3：三数据集 + 过滤 misleading）**  
+2. **训练（v3：三数据集 + 默认过滤 misleading 与 both_wrong）**  
    ```bash
    bash scripts/train_v3.sh
    ```  
-   或指定 GPU：`GPUS=0,1,2,3 bash scripts/train_v3.sh`。输出 adapter 在 `outputs/qwen3_sr_lora_v3/`。
+   或指定 GPU：`GPUS=0,1,2,3 bash scripts/train_v3.sh`。输出 adapter 在 `outputs/qwen3_sr_lora_v3/`。仅过滤 misleading 时：`FILTER_QUADRANT=misleading bash scripts/train_v3.sh`。
 
 3. **评测**  
    ```bash

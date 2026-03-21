@@ -1,7 +1,7 @@
 #!/bin/bash
 # v3 训练（底座为 Qwen3-8B-Base，非 Instruct）
 #
-# 默认过滤 quadrant：misleading + both_wrong（与 Instruct 版 train_v3.sh 仅过滤 misleading 不同）
+# 默认过滤 quadrant：misleading + both_wrong（与 train_v3.sh 一致）
 # 覆盖示例：FILTER_QUADRANT=misleading bash scripts/train_v3_base.sh
 #
 # 前置：先运行 python scripts/download_qwen3_8b_base.py
