@@ -155,7 +155,7 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 
 - **与 Instruct 版区别**：`Qwen/Qwen3-8B-Base` 为预训练权重，对话与指令跟随通常弱于 `Qwen/Qwen3-8B`；**在 Base 上训练的 LoRA 不能加载到 Instruct 上，反之亦然**。
 - **下载**：`python scripts/download_qwen3_8b_base.py` → 保存到 `model/Qwen3-8B-Base`。
-- **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。
+- **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。默认过滤 **`misleading` 与 `both_wrong`**（可用 `FILTER_QUADRANT=misleading bash scripts/train_v3_base.sh` 等覆盖）。
 - **评测**：显式指定基座与 adapter，例如：
   ```bash
   bash scripts/run_eval_base_example.sh gsm8k 200
