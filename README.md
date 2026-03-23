@@ -144,7 +144,7 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 - **`src/student/`**：Student 训练与评测。
   - `train_qwen3_sr_lora.py`：Qwen3-8B + LoRA 训练，支持多 JSONL 合并、按 `quadrant` 过滤。
   - `eval_lora_accuracy.py`：对比 base 与 LoRA 的准确率，支持 HotpotQA、GSM8K、OpenBookQA、MATH。
-- **`scripts/`**：数据下载（`download_qwen3_8b.py`、`download_qwen3_8b_base.py`）、训练 `train_v3.sh` / `train_v3_base.sh`、`run_eval_base_example.sh` 等。
+- **`scripts/`**：数据下载、训练 `train_v3.sh` / `train_v3_base.sh`、`run_eval_base_example.sh`、**`compare_lora_v3_instruct_vs_base.sh`**（tmux 里挂跑：对比 Instruct+v3 LoRA 与 Base+v3_base LoRA，见脚本头注释）等。
 
 ## 环境与依赖
 
