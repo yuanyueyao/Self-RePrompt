@@ -224,7 +224,7 @@ def test_model_trainability(model_path: str) -> None:
 # ─────────────────────────────────────────────────────────────
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="train_qwen3_sr_lora.py 诊断脚本")
-    parser.add_argument("--model_name_or_path", default="model/Qwen3-8B")
+    parser.add_argument("--model_name_or_path", default="model/Qwen3-8B-Base")
     parser.add_argument("--skip_model", action="store_true", help="跳过模型加载（无 GPU 时使用）")
     parser.add_argument("--max_seq_length", type=int, default=128, help="tokenize 测试用的序列长度")
     return parser.parse_args()

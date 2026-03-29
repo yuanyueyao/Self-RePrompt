@@ -2,7 +2,7 @@
 """
 查看 save_pretrained 保存的 LoRA adapter 目录内容。
 
-用法：python scripts/inspect_lora_save.py [outputs/qwen3_sr_lora_v3]
+用法：python scripts/inspect_lora_save.py [outputs/qwen3_sr_lora_v3_base]
 """
 
 import argparse
@@ -35,7 +35,7 @@ def tree(dir_path: Path, prefix: str = "", max_depth: int = 3, depth: int = 0) -
 
 def main():
     p = argparse.ArgumentParser(description="查看 LoRA save_pretrained 保存内容")
-    p.add_argument("path", nargs="?", default="outputs/qwen3_sr_lora_v3")
+    p.add_argument("path", nargs="?", default="outputs/qwen3_sr_lora_v3_base")
     args = p.parse_args()
 
     root = Path(args.path)

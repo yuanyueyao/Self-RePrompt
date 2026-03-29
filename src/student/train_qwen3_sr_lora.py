@@ -12,7 +12,7 @@ Self-RePrompt 项目 Qwen3-8B LoRA 训练脚本。
    - <SRP_START> / <SRP_END> 标记“内部自重写 prompt 段”，用于训练模型先写内部 prompt 再回答。
 
 3. 基于 HuggingFace Transformers + PEFT：
-   - 从 --model_name_or_path 加载 Qwen3-8B 基座模型与 tokenizer（支持 HF 模型名或本地路径如 model/Qwen3-8B）；
+   - 从 --model_name_or_path 加载 Qwen3-8B 系基座与 tokenizer（默认 **Qwen3-8B-Base**；可选 Instruct 版，二者 LoRA 不可混用）；
    - 为 tokenizer 注册 <SRP_START> / <SRP_END> 特殊 token，并调用 resize_token_embeddings；
    - 使用 LoRA 在注意力层 q_proj/k_proj/v_proj/o_proj 上挂载可训练低秩矩阵。
 
@@ -30,7 +30,7 @@ Self-RePrompt 项目 Qwen3-8B LoRA 训练脚本。
 典型用法示例（7 卡 torchrun）：
 
     CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 torchrun --nproc_per_node=7 src/student/train_qwen3_sr_lora.py \\
-        --model_name_or_path model/Qwen3-8B \\
+        --model_name_or_path model/Qwen3-8B-Base \\
         --train_file data/srp_prompt_with_answer/hotpot_train_qa_2000_with_srp_answer.jsonl \\
         --output_dir outputs/qwen3_sr_lora_hotpot_v2 \\
         --max_seq_length 1024 \\
@@ -42,7 +42,7 @@ Self-RePrompt 项目 Qwen3-8B LoRA 训练脚本。
         --bf16 \\
         --mask_user
 
-搭配 eval_qwen3_sr_lora_on_gsm8k.py 等评估脚本，用于对比微调前后模型在 GSM8K 等任务上的表现差异。
+评测请使用仓库根目录下 scripts/run_baselines.sh（调用 eval_baselines.py，含 B0–B4 baseline）。
 """
 
 import argparse
@@ -96,15 +96,15 @@ class TrainConfig:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="LoRA finetune Qwen3-8B for Self-RePrompt on srp_prompt data."
+        description="LoRA finetune Qwen3-8B (-Base / Instruct) for Self-RePrompt on srp_prompt data."
     )
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="model/Qwen3-8B",
+        default="model/Qwen3-8B-Base",
         help=(
-            "基座路径：Instruct 用 model/Qwen3-8B 或 Qwen/Qwen3-8B；"
-            "预训练底座用 model/Qwen3-8B-Base 或 Qwen/Qwen3-8B-Base（需单独训练 LoRA，不可混用 adapter）。"
+            "基座路径（默认预训练 Base）：model/Qwen3-8B-Base；"
+            "若用对话 Instruct 版：model/Qwen3-8B。**二者上训练的 LoRA 不可互换**。"
         ),
     )
     parser.add_argument(
@@ -122,13 +122,13 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="misleading,both_wrong",
         help="逗号分隔的 quadrant 值，这些样本将被过滤掉。"
-             "默认过滤 misleading 与 both_wrong（与 train_v3.sh / train_v3_base.sh 一致）。"
+             "默认过滤 misleading 与 both_wrong（与 scripts/train_v3.sh 一致）。"
              "设为空字符串则不过滤。",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="outputs/qwen3_sr_lora_v3",
+        default="outputs/qwen3_sr_lora_v3_base",
         help="Directory to save LoRA adapter and tokenizer.",
     )
     parser.add_argument(

@@ -26,7 +26,7 @@ def main() -> None:
     )
     print(f"Done. Model saved to: {path}")
     print(
-        "\n下一步: bash scripts/train_v3_base.sh\n"
+        "\n下一步: bash scripts/train_v3.sh\n"
         "评测时请同时使用 --base_model model/Qwen3-8B-Base "
         "与 --lora_dir outputs/qwen3_sr_lora_v3_base"
     )

@@ -21,10 +21,10 @@
   并将其中的 sr 模式回复视为 srp_answer，用于后续训练 student 模型。
 
 注意：
-- 本脚本面向“teacher API / teacher LLM 评估与样本筛选”，
-  与微调后的 Qwen3 Student 模型评估脚本 eval_qwen3_sr_lora_on_gsm8k.py 区分开：
+- 本脚本面向 “teacher API / teacher LLM 评估与样本筛选”，
+  与已经微调好的 Qwen3 Student 评测区分开：
   - 本文件：分析 teacher + sr_prompt 的效果，产出带 quadrant 的训练样本；
-  - eval_qwen3_sr_lora_on_gsm8k.py：评估已经微调好的 Qwen3-SRP-Student 模型本身的表现。
+  - Student 评测：仓库根目录 `scripts/run_baselines.sh`（`eval_baselines.py`，B0–B4）。
 
 使用方式（示例）:
     python src/eval_gsm8k_sr_effect_question.py --model deepseek-chat

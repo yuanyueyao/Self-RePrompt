@@ -4,7 +4,7 @@
 
 **做法**：用特殊 token 约定模型先输出 `<SRP_START>…<SRP_END>` 段（自重写 prompt），再基于该段生成最终回答。难点在于训练数据的构建。
 
-**本仓库**：基于 Qwen3-8B + LoRA 的实现，包含 Teacher 生成三元组数据、Student LoRA 训练与多数据集评测脚本。
+**本仓库**：基于 **Qwen3-8B-Base**（预训练底座）+ LoRA 的 Student 实现为主，包含 Teacher 生成三元组数据、LoRA 训练与多数据集评测脚本。（亦可用 Qwen3-8B Instruct 另训 LoRA，但与 Base 上 LoRA **不可混用**。）
 
 ## 核心思路拆解
 
@@ -139,50 +139,64 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 
 ## 项目结构
 
-- **`data/`**：原始数据与生成的三元组（未纳入 Git，需本地准备或通过脚本生成）。
+- **`data/`**：原始数据与生成的三元组（未纳入 Git，需本地准备或通过脚本生成）。原始抓取结果多在 **`data/raw/`**，可按任务粗分为两类（数学 vs 非数学通用推理/知识/指令）：
+  - **Math**：`gsm8k.json`、`hendrycks_math.json`（`scripts/save_math_datasets.py`）。
+  - **通用推理**（含多跳 QA、科学问答、长知识、综合性多项选择、指令对话等）：`super_gpqa.json`、`mmlu_pro.json`、`bbeh.json`（`scripts/save_reasoning_benchmarks.py`）；`hotpot_train_qa_2000.json`；`musique_ans_train.jsonl`（`save_musique.py`）；`openbookqa_additional.json`（`save_openbookqa.py`）；`popqa.json`（`save_popqa.py`）；以及 `gpt4_alpaca.json`、`stanford_alpaca.json`、`flan_v2.json`、`sharegpt.json`、`openassistant.json`（`save_open_instruct_datasets.py`）。
 - **`src/teacher/`**：用 Teacher 模型生成 `sr_prompt` 与 `srp_answer` 的脚本（如 `gen_srp_prompt_from_*.py`、`gen_srp_answer_from_*.py`），支持 HotpotQA、GSM8K、OpenBookQA。
 - **`src/student/`**：Student 训练与评测。
-  - `train_qwen3_sr_lora.py`：Qwen3-8B + LoRA 训练，支持多 JSONL 合并、按 `quadrant` 过滤。
-  - `eval_lora_accuracy.py`：对比 base 与 LoRA 的准确率，支持 HotpotQA、GSM8K、OpenBookQA、MATH。
-- **`scripts/`**：数据下载、训练 `train_v3.sh` / `train_v3_base.sh`、`run_eval_base_example.sh`、**`compare_lora_v3_instruct_vs_base.sh`**（tmux 里挂跑：对比 Instruct+v3 LoRA 与 Base+v3_base LoRA，见脚本头注释）等。
+  - `train_qwen3_sr_lora.py`：由 `scripts/train_v3.sh` 调用；Qwen3-8B-Base（默认）+ LoRA，多 JSONL、`quadrant` 过滤。
+  - `eval_baselines.py`：由 **`scripts/run_baselines.sh`** 调用；B0–B4 baseline 对比（见下）。
+- **`scripts/`**：详见 **`scripts/README.md`**（按「主线 / 模型 / 数据 / 后处理」分类）。**训练入口**：`train_v3.sh`；**评测入口**：`run_baselines.sh`。
+- **`src/`**：详见 **`src/README.md`**（`student/` 与 `teacher/` 分工）。
 
 ## 环境与依赖
 
 - Python 3.10+，建议使用 conda 环境。
-- 主要依赖：`torch`、`transformers`、`peft`、`datasets`。基座模型为 **Qwen3-8B**（需自行下载到 `model/Qwen3-8B` 或使用 HuggingFace 名称）。
+- 主要依赖：`torch`、`transformers`、`peft`、`datasets`。Student **默认基座**为 **Qwen3-8B-Base**：`python scripts/download_qwen3_8b_base.py` → `model/Qwen3-8B-Base`。
 
-### Qwen3-8B-Base（预训练底座，对照实验）
+### Qwen3-8B Instruct（可选对照）
 
-- **与 Instruct 版区别**：`Qwen/Qwen3-8B-Base` 为预训练权重，对话与指令跟随通常弱于 `Qwen/Qwen3-8B`；**在 Base 上训练的 LoRA 不能加载到 Instruct 上，反之亦然**。
-- **下载**：`python scripts/download_qwen3_8b_base.py` → 保存到 `model/Qwen3-8B-Base`。
-- **训练（与 v3 相同数据，仅换底座）**：`bash scripts/train_v3_base.sh` → 输出 `outputs/qwen3_sr_lora_v3_base/`。过滤规则与 `train_v3.sh` 相同：默认 **`misleading` 与 `both_wrong`**（可用 `FILTER_QUADRANT=...` 覆盖）。
-- **评测**：显式指定基座与 adapter，例如：
-  ```bash
-  bash scripts/run_eval_base_example.sh gsm8k 200   # 默认 8 卡并行（`GPUS=0,1,...` 可调）
-  # 或
-  python -u src/student/eval_lora_accuracy.py --base_model model/Qwen3-8B-Base \
-      --lora_dir outputs/qwen3_sr_lora_v3_base --dataset gsm8k --max_samples 200 \
-      --gpus 0,1,2,3,4,5,6,7
-  ```
+- **与 Base 区别**：对话版权重与 Base **不共用** LoRA；在 Instruct 上训练的 adapter **不得**挂到 Base checkpoint 上。
+- **若需 Instruct 权重**：请自行从 Hugging Face 下载 `Qwen/Qwen3-8B` 到例如 `model/Qwen3-8B`（本仓库不再提供专用下载脚本）。
+- **训练**：`python src/student/train_qwen3_sr_lora.py --model_name_or_path model/Qwen3-8B --output_dir …`（勿覆盖 Base 版 `outputs/`）。
+
+### 评测（唯一入口：`run_baselines.sh`）
+
+一次只跑**一个**数据集；对该次任务使用 **`GPUS` 中的全部卡**（默认 `0,1,…,7`，与 `eval_baselines.py` 内多进程分片一致）。默认模式 `B0,B1,B2,B4`（纯 Base / CoT / Oracle SRP / SRP-LoRA），可通过环境变量 `MODES`、`LORA`、`SAMPLES` 调整。
+
+```bash
+bash scripts/run_baselines.sh hotpot      # → logs/baseline_hotpot.log
+bash scripts/run_baselines.sh gsm8k
+bash scripts/run_baselines.sh openbookqa
+bash scripts/run_baselines.sh super_gpqa  # data/raw/super_gpqa.json（需先 save_reasoning_benchmarks.py）
+bash scripts/run_baselines.sh mmlu_pro    # data/raw/mmlu_pro.json（默认用 test 切分）
+bash scripts/run_baselines.sh bbeh        # data/raw/bbeh.json
+bash scripts/run_baselines.sh all         # 按顺序 hotpot + gsm8k + openbookqa
+bash scripts/run_baselines.sh all_benchmarks  # 上述三者 + super_gpqa + mmlu_pro + bbeh
+GPUS=0,1,2,3,4,5,6 bash scripts/run_baselines.sh gsm8k
+```
+
+需要直接调 Python 时：`python -u src/student/eval_baselines.py --dataset gsm8k --gpus …`（`--dataset` 可选：`hotpot` | `gsm8k` | `openbookqa` | `super_gpqa` | `mmlu_pro` | `bbeh` | `musique` 等，与脚本内 `DATASET_CONFIGS` 一致）。
+
 - Base 仍使用 tokenizer 的 `chat_template`（与官方仓库一致）；若后续官方变更导致模板缺失，需在训练/评测脚本中单独适配。
 
 ## 快速开始
 
 1. **数据**  
-   - 原始数据放在 `data/raw/`（如通过 `scripts/save_math_datasets.py` 下载 MATH/GSM8K）。  
+   - 原始数据放在 `data/raw/`：数学类用 `save_math_datasets.py`（GSM8K + MATH），通用推理/基准类用 `save_reasoning_benchmarks.py`（SuperGPQA、MMLU-Pro、BBEH）及其他 `scripts/save_*.py`（详见上文「数据集归类」）。  
    - 运行 teacher 脚本生成 `data/srp_prompt_with_answer/*.jsonl`（每行含 `user`、`sr_prompt`、`srp_answer`、`quadrant` 等）。
 
-2. **训练（v3：三数据集 + 默认过滤 misleading 与 both_wrong）**  
+2. **训练（v3：Qwen3-8B-Base + 三数据集，默认过滤 misleading 与 both_wrong）**  
    ```bash
    bash scripts/train_v3.sh
    ```  
-   或指定 GPU：`GPUS=0,1,2,3 bash scripts/train_v3.sh`。输出 adapter 在 `outputs/qwen3_sr_lora_v3/`。仅过滤 misleading 时：`FILTER_QUADRANT=misleading bash scripts/train_v3.sh`。
+   或指定 GPU：`GPUS=0,1,2,3 bash scripts/train_v3.sh`。输出 adapter 在 `outputs/qwen3_sr_lora_v3_base/`（可用 `OUT_DIR=...` 覆盖）。仅过滤 misleading 时：`FILTER_QUADRANT=misleading bash scripts/train_v3.sh`。
 
-3. **评测**  
+3. **评测**（见上一节）  
    ```bash
-   python -u src/student/eval_lora_accuracy.py --dataset gsm8k --max_samples 200 --lora_dir outputs/qwen3_sr_lora_v3
+   bash scripts/run_baselines.sh gsm8k
    ```  
-   `--dataset` 可选：`hotpot`、`gsm8k`、`openbookqa`、`math`。MATH 支持 `--math_subject`、`--math_level` 过滤。
+   `eval_baselines.py` 还支持 `musique` / `musique_full`、以及 `super_gpqa` / `mmlu_pro` / `bbeh`（依赖 `data/raw/` 下对应 JSON）；`run_baselines.sh` 封装见上一节（含 `all_benchmarks`）。
 
 ## 最小可行实验（MVP）建议
 

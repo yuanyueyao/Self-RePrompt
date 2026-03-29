@@ -15,8 +15,8 @@
 - 与 GSM8K 脚本类似，可选取「sr 提升显著」的样本，用作 Hotpot 任务上的 srp_answer 训练数据来源。
 
 注意：
-- 本脚本同样是 “teacher API / teacher LLM 评估与样本筛选”，
-  与 Qwen3 Student 微调评估脚本 eval_qwen3_sr_lora_on_gsm8k.py 不同。
+- 本脚本是 “teacher API / teacher LLM 评估与样本筛选”，
+  与 Student 侧评测（仓库 `scripts/run_baselines.sh` → `eval_baselines.py`）不同。
 
 使用方式（示例）:
     python src/eval_hotpot_sr_effect_question.py --model deepseek-chat
