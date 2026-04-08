@@ -1,32 +1,27 @@
 """
 SRP 对比 Baseline 评测脚本。
 
-对同一数据集评测以下 5 种条件，帮助定位 SRP 的增益来源：
+对同一数据集评测以下 4 种条件（名称与论文一致，便于与结果表对照）：
 
-  B0  Base Qwen3-8B-Base（无任何修改）
-  B1  Base + CoT prompt（零样本，在 user 消息中加策略提示）
-  B2  Base + Oracle SRP（推理时把 teacher 生成的 sr_prompt 注入 user 消息）
-  B3  Base + SRP-LoRA（我们的方法，无 SRP 格式加成，即 disable_adapter + 正常 prompt）
-  B4  SRP-LoRA（我们的方法，enable_adapter）
+  qwen3_8b    裸 Qwen3-8B-Base（Peft disable_adapter，无额外提示）
+  COT         零样本 CoT 策略句（disable_adapter）
+  oracle_srp  Teacher 的 sr_prompt 注入 user（disable_adapter；需数据含该字段）
+  SRP         SRP-LoRA（enable_adapter，本文方法）
 
-B2 需要数据文件中存在 sr_prompt 字段（仅 srp_prompt_with_answer 目录下的文件有）。
+oracle_srp 需要数据文件中存在 sr_prompt 字段（仅 srp_prompt_with_answer 等目录下的文件有）。
+
+兼容历史参数：B0→qwen3_8b，B1→COT，B2→oracle_srp，B3/B4→SRP；旧名 cot_zs→COT、srp_lora→SRP。
 
 用法：
-    # 全部 5 种条件一次评测（会顺序评测，较慢）：
     CUDA_VISIBLE_DEVICES=0 python -u src/student/eval_baselines.py \\
         --dataset gsm8k --max_samples 200
 
-    # 只评测指定 baseline（逗号分隔）：
     CUDA_VISIBLE_DEVICES=0 python -u src/student/eval_baselines.py \\
-        --dataset hotpot --max_samples 200 --modes B0,B1,B2,B4
+        --dataset hotpot --max_samples 200 \\
+        --modes qwen3_8b,COT,oracle_srp,SRP
 
-    # 或直接多卡（与 scripts/run_baselines.sh 内部一致）：
     python -u src/student/eval_baselines.py \\
         --dataset gsm8k --max_samples 200 --gpus 0,1,2,3,4,5,6,7
-
-    # 通用推理基准（需先有 data/raw/*.json，见 save_reasoning_benchmarks.py）：
-    python -u src/student/eval_baselines.py \\
-        --dataset mmlu_pro --max_samples 200 --gpus 0,1,2,3
 """
 
 import argparse
@@ -44,6 +39,46 @@ from pathlib import Path
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
+
+
+# ── Baseline 标识（论文与脚本统一）──────────────────────────────
+
+MODE_QWEN3_8B = "qwen3_8b"
+MODE_COT = "COT"
+MODE_ORACLE_SRP = "oracle_srp"
+MODE_SRP = "SRP"
+
+CANONICAL_MODES = (
+    MODE_QWEN3_8B,
+    MODE_COT,
+    MODE_ORACLE_SRP,
+    MODE_SRP,
+)
+_CANONICAL_SET = frozenset(CANONICAL_MODES)
+
+LEGACY_MODE_ALIASES = {
+    "B0": MODE_QWEN3_8B,
+    "B1": MODE_COT,
+    "B2": MODE_ORACLE_SRP,
+    "B3": MODE_SRP,
+    "B4": MODE_SRP,
+    "cot_zs": MODE_COT,
+    "srp_lora": MODE_SRP,
+}
+
+MODE_DESC_SHORT = {
+    MODE_QWEN3_8B: "Qwen3-8B-Base（无修改）",
+    MODE_COT: "Base + CoT prompt（zero-shot）",
+    MODE_ORACLE_SRP: "Base + Oracle SRP（teacher hint）",
+    MODE_SRP: "SRP-LoRA（our method）",
+}
+
+MODE_DESC_LONG = {
+    MODE_QWEN3_8B: "Base Qwen3-8B-Base（无修改）",
+    MODE_COT: "Base + CoT/策略提示（零样本）",
+    MODE_ORACLE_SRP: "Base + Oracle SRP（teacher sr_prompt 注入）",
+    MODE_SRP: "SRP-LoRA v3（我们的方法）",
+}
 
 
 # ── CoT/策略提示模板 ─────────────────────────────────────────────
@@ -113,6 +148,29 @@ DATASET_CONFIGS = {
 
 def log(msg: str = ""):
     print(msg, flush=True)
+
+
+def normalize_baseline_modes(modes: list) -> list:
+    """
+    将 CLI 中的 baseline 名解析为规范 id（qwen3_8b / COT / oracle_srp / SRP）。
+    支持历史别名 B0–B4、srp_lora；按首次出现去重。
+    """
+    out = []
+    seen = set()
+    for raw in modes:
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        m = LEGACY_MODE_ALIASES.get(raw, raw)
+        if m not in _CANONICAL_SET:
+            raise ValueError(
+                f"未知 baseline {raw!r}。请使用: {', '.join(CANONICAL_MODES)}；"
+                f"或别名 B0–B4、srp_lora。"
+            )
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
 
 
 # ── 答案提取（与历史 eval 脚本同策略，便于论文口径一致）────────────
@@ -424,33 +482,30 @@ def eval_one_mode(mode: str, data: list, model, tokenizer,
                   dtype: str, max_new_tokens: int, device: str) -> dict:
     """
     评测单个 baseline 模式，返回 {acc, n, corrects}。
-    mode 含义：
-      B0  base model 原始输入
-      B1  base model + CoT suffix
-      B2  base model + oracle sr_prompt 注入 user 消息
-      B3  base model (disable adapter) + 原始输入（与 B0 相同，用于确认 LoRA 权重差异）
-      B4  LoRA model（enable adapter）+ 原始输入
+    mode 为规范 id：qwen3_8b / COT / oracle_srp / SRP。
     """
-    if mode in ("B0", "B3"):
-        model.disable_adapter_layers()
-    elif mode == "B4":
+    if mode == MODE_SRP:
         model.enable_adapter_layers()
-    elif mode in ("B1", "B2"):
+    elif mode in (MODE_QWEN3_8B, MODE_COT, MODE_ORACLE_SRP):
         model.disable_adapter_layers()
+    else:
+        raise ValueError(
+            f"未知评测模式: {mode!r}（应为 {', '.join(CANONICAL_MODES)}）"
+        )
 
     corrects = []
     for i, sample in enumerate(data):
         user = sample["user"]
         gold = sample["gold"]
 
-        if mode == "B1":
+        if mode == MODE_COT:
             user_input = user + COT_SUFFIX
-        elif mode == "B2":
+        elif mode == MODE_ORACLE_SRP:
             sr = sample.get("sr_prompt", "").strip()
             if sr:
                 user_input = ORACLE_SRP_TEMPLATE.format(user=user, sr_prompt=sr)
             else:
-                user_input = user  # 无 sr_prompt 时退化到 B0
+                user_input = user  # 无 sr_prompt 时退化到裸输入
         else:
             user_input = user
 
@@ -486,8 +541,8 @@ def load_tokenizer_and_peft(args, device: str):
     return tokenizer, model
 
 
-def filter_b2_if_no_srp(modes: list, data: list, log_coverage: bool = True) -> list:
-    if "B2" not in modes:
+def filter_oracle_srp_if_no_srp(modes: list, data: list, log_coverage: bool = True) -> list:
+    if MODE_ORACLE_SRP not in modes:
         return modes
     n = len(data)
     has_srp = sum(1 for d in data if d.get("sr_prompt"))
@@ -495,8 +550,8 @@ def filter_b2_if_no_srp(modes: list, data: list, log_coverage: bool = True) -> l
         log(f"Oracle SRP 覆盖率：{has_srp}/{n} ({has_srp/n*100:.0f}%)")
     if has_srp == 0:
         if log_coverage:
-            log("  ⚠️  数据中无 sr_prompt，跳过 B2")
-        return [m for m in modes if m != "B2"]
+            log(f"  ⚠️  数据中无 sr_prompt，跳过 {MODE_ORACLE_SRP}")
+        return [m for m in modes if m != MODE_ORACLE_SRP]
     return modes
 
 
@@ -527,25 +582,20 @@ def print_summary(all_results: list, n: int, args, total_time: float) -> None:
     log(f"  数据集: {args.dataset}  |  样本数: {n}  |  总耗时: {total_time:.0f}s")
     log(f"  LoRA:  {args.lora_dir}")
     log(f"{'='*65}")
-    log(f"  {'模式':<6}  {'准确率':>8}  {'正确':>6}  {'描述'}")
-    log(f"  {'─'*60}")
-    mode_desc_short = {
-        "B0": "Base（无修改）",
-        "B1": "Base + CoT prompt（zero-shot）",
-        "B2": "Base + Oracle SRP（teacher hint）",
-        "B3": "Base（disable_adapter，同 B0）",
-        "B4": "SRP-LoRA（our method）",
-    }
+    col_w = max(len(MODE_SRP), max(len(m) for m in CANONICAL_MODES))
+    hdr = f"  {'baseline':<{col_w}}  {'准确率':>8}  {'正确':>6}  描述"
+    log(hdr)
+    log(f"  {'─'*(col_w + 32)}")
     for r in all_results:
-        log(f"  {r['mode']:<6}  {r['acc']:>7.1f}%  {round(r['acc']*n/100):>5}/{n}  "
-            f"{mode_desc_short.get(r['mode'], r['mode'])}")
-    b4 = next((r for r in all_results if r["mode"] == "B4"), None)
-    if b4:
-        log(f"\n  SRP-LoRA vs 各 Baseline：")
+        log(f"  {r['mode']:<{col_w}}  {r['acc']:>7.1f}%  {round(r['acc']*n/100):>5}/{n}  "
+            f"{MODE_DESC_SHORT.get(r['mode'], r['mode'])}")
+    ours = next((r for r in all_results if r["mode"] == MODE_SRP), None)
+    if ours:
+        log(f"\n  {MODE_SRP} vs 其它基线：")
         for r in all_results:
-            if r["mode"] == "B4":
+            if r["mode"] == MODE_SRP:
                 continue
-            delta = b4["acc"] - r["acc"]
+            delta = ours["acc"] - r["acc"]
             sign = "🟢" if delta > 0 else ("🔴" if delta < 0 else "➡️")
             log(f"    vs {r['mode']}:  {delta:+.1f}%  {sign}")
     log(f"{'='*65}")
@@ -570,10 +620,10 @@ def _shard_worker_cmd(args: argparse.Namespace, split_id: int, total_splits: int
 
 def run_shard_worker(args: argparse.Namespace) -> None:
     cfg = DATASET_CONFIGS[args.dataset]
-    modes = [m.strip() for m in args.modes.split(",") if m.strip()]
+    modes = normalize_baseline_modes([m.strip() for m in args.modes.split(",") if m.strip()])
     data_full = load_data(cfg, args.max_samples, args.seed)
     n_full = len(data_full)
-    modes = filter_b2_if_no_srp(modes, data_full, log_coverage=False)
+    modes = filter_oracle_srp_if_no_srp(modes, data_full, log_coverage=False)
 
     S = args._total_splits
     sid = args._split_id
@@ -601,8 +651,8 @@ def run_multi_gpu(args: argparse.Namespace, gpus: list) -> None:
     n = len(data_full)
     log(f"实际样本数：{n}\n")
 
-    modes = [m.strip() for m in args.modes.split(",") if m.strip()]
-    modes = filter_b2_if_no_srp(modes, data_full)
+    modes = normalize_baseline_modes([m.strip() for m in args.modes.split(",") if m.strip()])
+    modes = filter_oracle_srp_if_no_srp(modes, data_full)
     modes_csv = ",".join(modes)
 
     S = len(gpus)
@@ -640,8 +690,16 @@ def parse_args():
     p.add_argument("--max_new_tokens", type=int, default=4096)
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--modes", type=str, default="B0,B1,B2,B4",
-                   help="要评测的模式，逗号分隔。可选：B0,B1,B2,B3,B4")
+    default_modes = ",".join(CANONICAL_MODES)
+    p.add_argument(
+        "--modes",
+        type=str,
+        default=default_modes,
+        help=(
+            f"baseline，逗号分隔。默认 {default_modes}；"
+            f"兼容别名 B0–B4、cot_zs→COT、srp_lora→SRP"
+        ),
+    )
     p.add_argument("--gpus", type=str, default="",
                    help="逗号分隔 GPU id；多张卡时按样本 index 分片并行（子进程内 cuda:0）")
     p.add_argument("--_split_id", type=int, default=0, help=argparse.SUPPRESS)
@@ -663,13 +721,13 @@ def main():
         return
 
     cfg = DATASET_CONFIGS[args.dataset]
-    modes = [m.strip() for m in args.modes.split(",") if m.strip()]
+    modes = normalize_baseline_modes([m.strip() for m in args.modes.split(",") if m.strip()])
 
     log(f"加载数据：{cfg['file']}（最多 {args.max_samples} 条）")
     data = load_data(cfg, args.max_samples, args.seed)
     log(f"实际样本数：{len(data)}\n")
 
-    modes = filter_b2_if_no_srp(modes, data)
+    modes = filter_oracle_srp_if_no_srp(modes, data)
 
     device = f"cuda:{gpus[0]}" if gpus else args.device
     log(f"\n加载模型：{args.base_model} + {args.lora_dir}")
@@ -680,15 +738,8 @@ def main():
     t_start = time.time()
 
     for mode in modes:
-        mode_desc = {
-            "B0": "Base Qwen3-8B-Base（无修改）",
-            "B1": "Base + CoT/策略提示（零样本）",
-            "B2": "Base + Oracle SRP（teacher sr_prompt 注入）",
-            "B3": "Base（disable adapter，验证等价于 B0）",
-            "B4": "SRP-LoRA v3（我们的方法）",
-        }
         log(f"\n{'─'*60}")
-        log(f"  评测模式 {mode}：{mode_desc.get(mode, mode)}")
+        log(f"  评测模式 {mode}：{MODE_DESC_LONG.get(mode, mode)}")
         log(f"{'─'*60}")
         t0 = time.time()
         result = eval_one_mode(mode, data, model, tokenizer,

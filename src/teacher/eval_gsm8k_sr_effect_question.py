@@ -24,7 +24,7 @@
 - 本脚本面向 “teacher API / teacher LLM 评估与样本筛选”，
   与已经微调好的 Qwen3 Student 评测区分开：
   - 本文件：分析 teacher + sr_prompt 的效果，产出带 quadrant 的训练样本；
-  - Student 评测：仓库根目录 `scripts/run_baselines.sh`（`eval_baselines.py`，B0–B4）。
+  - Student 评测：仓库根目录 `scripts/run_baselines.sh`（`eval_baselines.py`，qwen3_8b / COT / oracle_srp / SRP）。
 
 使用方式（示例）:
     python src/eval_gsm8k_sr_effect_question.py --model deepseek-chat

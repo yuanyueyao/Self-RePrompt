@@ -10,7 +10,7 @@
 | 文件                 | 说明                                                            |
 | ------------------ | ------------------------------------------------------------- |
 | `train_v3.sh`      | **唯一训练入口**：Qwen3-8B-Base + 三数据集 LoRA，`torchrun` 多卡。           |
-| `run_baselines.sh` | **唯一评测入口**：调用 `src/student/eval_baselines.py`，B0–B4，多 GPU 分片。 |
+| `run_baselines.sh` | **唯一评测入口**：调用 `src/student/eval_baselines.py`（`qwen3_8b` 等命名），多 GPU 分片。 |
 
 
 ---

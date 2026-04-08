@@ -145,7 +145,7 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 - **`src/teacher/`**：用 Teacher 模型生成 `sr_prompt` 与 `srp_answer` 的脚本（如 `gen_srp_prompt_from_*.py`、`gen_srp_answer_from_*.py`），支持 HotpotQA、GSM8K、OpenBookQA。
 - **`src/student/`**：Student 训练与评测。
   - `train_qwen3_sr_lora.py`：由 `scripts/train_v3.sh` 调用；Qwen3-8B-Base（默认）+ LoRA，多 JSONL、`quadrant` 过滤。
-  - `eval_baselines.py`：由 **`scripts/run_baselines.sh`** 调用；B0–B4 baseline 对比（见下）。
+  - `eval_baselines.py`：由 **`scripts/run_baselines.sh`** 调用；`qwen3_8b` / `COT` / `oracle_srp` / `SRP` 四路 baseline（见下；兼容 `B0`–`B4` 与旧名 `cot_zs`、`srp_lora`）。
 - **`scripts/`**：详见 **`scripts/README.md`**（按「主线 / 模型 / 数据 / 后处理」分类）。**训练入口**：`train_v3.sh`；**评测入口**：`run_baselines.sh`。
 - **`src/`**：详见 **`src/README.md`**（`student/` 与 `teacher/` 分工）。
 
@@ -162,7 +162,7 @@ Teacher 模型负责生成 `P*` 与 `A*`，得到三元组后训练 Student；St
 
 ### 评测（唯一入口：`run_baselines.sh`）
 
-一次只跑**一个**数据集；对该次任务使用 **`GPUS` 中的全部卡**（默认 `0,1,…,7`，与 `eval_baselines.py` 内多进程分片一致）。默认模式 `B0,B1,B2,B4`（纯 Base / CoT / Oracle SRP / SRP-LoRA），可通过环境变量 `MODES`、`LORA`、`SAMPLES` 调整。
+一次只跑**一个**数据集；对该次任务使用 **`GPUS` 中的全部卡**（默认 `0,1,…,7`，与 `eval_baselines.py` 内多进程分片一致）。默认 `MODES=qwen3_8b,COT,oracle_srp,SRP`；可通过 `MODES`、`LORA`、`SAMPLES` 调整（仍支持 `B0`–`B4`、`cot_zs`、`srp_lora`）。
 
 ```bash
 bash scripts/run_baselines.sh hotpot      # → logs/baseline_hotpot.log

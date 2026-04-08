@@ -1,11 +1,12 @@
 #!/bin/bash
 # 一次只评测一个数据集；对该次评测使用 GPUS 中的全部卡（eval_baselines.py 内多进程分片）。
 #
-# 5 种条件（默认 MODES=B0,B1,B2,B4）：
-#   B0  Base Qwen3-8B-Base（无修改）
-#   B1  Base + CoT/策略提示
-#   B2  Base + Oracle SRP
-#   B4  SRP-LoRA v3
+# 4 种 baseline（默认与论文/ eval_baselines.py 一致）：
+#   qwen3_8b    裸 Qwen3-8B-Base
+#   COT         零样本 CoT 提示
+#   oracle_srp  Oracle SRP（teacher sr_prompt）
+#   SRP         SRP-LoRA（Ours）
+# 仍可用历史别名 B0–B4（由 Python 端解析）。
 #
 # 用法：
 #   bash scripts/run_baselines.sh hotpot      # 默认 8 卡 0–7 → logs/baseline_hotpot.log
@@ -30,7 +31,7 @@ fi
 
 LORA=${LORA:-"outputs/qwen3_sr_lora_v3_base"}
 SAMPLES=${SAMPLES:-200}
-MODES=${MODES:-"B0,B1,B2,B4"}
+MODES=${MODES:-"qwen3_8b,COT,oracle_srp,SRP"}
 GPUS=${GPUS:-"0,1,2,3,4,5,6,7"}
 
 IFS=',' read -r -a GPU_ARR <<< "$(echo "$GPUS" | tr -d '[:space:]')"

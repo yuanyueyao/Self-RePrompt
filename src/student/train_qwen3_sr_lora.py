@@ -42,7 +42,7 @@ Self-RePrompt 项目 Qwen3-8B LoRA 训练脚本。
         --bf16 \\
         --mask_user
 
-评测请使用仓库根目录下 scripts/run_baselines.sh（调用 eval_baselines.py，含 B0–B4 baseline）。
+评测请使用仓库根目录下 scripts/run_baselines.sh（调用 eval_baselines.py，基线名 qwen3_8b、COT、oracle_srp、SRP）。
 """
 
 import argparse

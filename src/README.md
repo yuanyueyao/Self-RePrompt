@@ -7,7 +7,7 @@
 | 文件 | 说明 |
 |------|------|
 | `train_qwen3_sr_lora.py` | LoRA 训练实现；由 **`scripts/train_v3.sh`** 调用。 |
-| `eval_baselines.py` | B0–B4 评测实现；由 **`scripts/run_baselines.sh`** 调用。 |
+| `eval_baselines.py` | `qwen3_8b` / `COT` / `oracle_srp` / `SRP` 评测；由 **`scripts/run_baselines.sh`** 调用。 |
 | `test_train_pipeline.py` | 可选：tokenizer / `mask_user` / 小规模加载自检，**非**训练入口。 |
 
 ---

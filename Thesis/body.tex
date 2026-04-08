@@ -245,17 +245,16 @@ Self-RePrompt 采用 Qwen3-8B 作为基座模型，在 tokenizer 中注册 \text
 
 \subsection{对比基线}
 
-为全面评估 Self-RePrompt 的有效性，本文设置五类对比基线：
+为全面评估 Self-RePrompt 的有效性，本文设置四类对比基线：
 
 \begin{itemize}
-    \item \textbf{B0：Base Qwen3-8B}。不加载任何 LoRA adapter、不添加额外提示，直接以原始用户问题进行零样本推理，作为最基本的参考基准。
-    \item \textbf{B1：Base + CoT 提示（零样本）}。在用户问题后追加固定的零样本策略提示词（不含 LoRA adapter），考察仅依靠提示工程能否带来相似收益。
-    \item \textbf{B2：Base + Oracle SRP}。将数据构造模型生成的 srp\_prompt 直接注入用户消息，不加载 LoRA adapter，模拟"已知最优内部提示"的上界场景。
-    \item \textbf{B3：Base + Disable Adapter}。加载 LoRA 模型但禁用 adapter，等价于 B0，用于验证 adapter 加载本身不影响推理行为。
-    \item \textbf{B4：SRP-LoRA v3（Ours）}。加载完整 LoRA adapter，模型先输出 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 内部提示段，再输出最终答案。
+    \item \textbf{\texttt{qwen3\_8b}}：裸 Qwen3-8B-Base。不启用 LoRA adapter、不添加额外提示，直接以原始用户问题进行零样本推理，作为最基本的参考基准。
+    \item \textbf{\texttt{COT}}：零样本 CoT 策略提示。在用户问题后追加固定的英文策略句（不启用 adapter），考察仅依靠提示工程能否带来相似收益。
+    \item \textbf{\texttt{oracle\_srp}}：Oracle SRP。将数据构造模型生成的 srp\_prompt 直接拼入用户消息（不启用 adapter），模拟已知教师内部提示的上界场景。
+    \item \textbf{SRP(Ours)}：SRP-LoRA v3。启用完整 LoRA adapter，模型先输出 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 内部提示段，再输出最终答案。
 \end{itemize}
 
-注：MuSiQue 及 SuperGPQA、MMLU-Pro、BBEH 等集中无与训练数据同源的 \texttt{sr\_prompt} 字段时，B2（Oracle SRP）不适用；本文对前三类补充基准未报告 B2。B3 与 B0 在工程上应完全一致，表中以 B0 同值列出（本次 \texttt{run\_baselines.sh} 默认未单独跑 B3，可按需增加 \texttt{MODES}）。
+注：MuSiQue 及 SuperGPQA、MMLU-Pro、BBEH 等集中无与训练数据同源的 \texttt{sr\_prompt} 字段时，\texttt{oracle\_srp} 不适用；本文对前三类补充基准未报告该条件。
 
 \subsection{评估指标}
 
@@ -297,26 +296,26 @@ Self-RePrompt 采用 Qwen3-8B 作为基座模型，在 tokenizer 中注册 \text
 
 \section{Self-RePrompt：多基线对比结果}
 
-\subsection{各数据集 B0--B4 准确率对比}
+\subsection{各数据集多基线准确率对比}
 
 Self-RePrompt 经多任务 LoRA 微调（v3）后，在三个训练集内数据集上均能稳定地先生成
 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>} 内部提示段，再输出最终答案。
-表~\ref{tab:baseline_full} 汇总了各数据集在五类基线下的答案准确率（均由 \texttt{bash scripts/run\_baselines.sh all\_benchmarks} 调用 \texttt{eval\_baselines.py}、每集 200 条、默认 8 卡分片测得；LoRA 路径为 \texttt{outputs/qwen3\_sr\_lora\_v3\_base}）。
+表~\ref{tab:baseline_full} 汇总了各数据集在四类基线下的答案准确率（均由 \texttt{bash scripts/run\_baselines.sh all\_benchmarks} 调用 \texttt{eval\_baselines.py}、每集 200 条、默认 8 卡分片测得；LoRA 路径为 \texttt{outputs/qwen3\_sr\_lora\_v3\_base}）。
 
 \begin{table}[htbp]
     \centering
-    \caption{各数据集 B0--B4 准确率对比（\%，样本数=200，2026-03 all\_benchmarks 重跑）}
+    \caption{各数据集基线准确率对比（\%，样本数=200，2026-03 all\_benchmarks 重跑；末列本文方法记为 SRP(Ours)，与脚本标识 \texttt{SRP} 一致）}
     \label{tab:baseline_full}
-    \begin{tabular}{lccccc}
+    \begin{tabular}{lcccc}
         \toprule
-        \textbf{数据集} & \textbf{B0} & \textbf{B1} & \textbf{B2} & \textbf{B3} & \textbf{B4（Ours）} \\
+        \textbf{数据集} & \textbf{\texttt{qwen3\_8b}} & \textbf{\texttt{COT}} & \textbf{\texttt{oracle\_srp}} & \textbf{SRP(Ours)} \\
         \midrule
-        GSM8K      & 78.0 & 74.5 & 51.0 & 78.0 & \textbf{95.0} \\
-        HotpotQA   & 26.0 & 32.0 & 28.0 & 26.0 & \textbf{39.0} \\
-        OpenBookQA & 43.5 & 75.0 & 48.5 & 43.5 & \textbf{93.5} \\
-        SuperGPQA  & 22.0 & 27.0 & ---  & 22.0 & \textbf{32.0} \\
-        MMLU-Pro   & 45.5 & 48.0 & ---  & 45.5 & \textbf{57.0} \\
-        BBEH       & 30.0 & 39.0 & ---  & 30.0 & 28.0 \\
+        GSM8K      & 78.0 & 74.5 & 51.0 & \textbf{95.0} \\
+        HotpotQA   & 26.0 & 32.0 & 28.0 & \textbf{39.0} \\
+        OpenBookQA & 43.5 & 75.0 & 48.5 & \textbf{93.5} \\
+        SuperGPQA  & 22.0 & 27.0 & ---  & \textbf{32.0} \\
+        MMLU-Pro   & 45.5 & 48.0 & ---  & \textbf{57.0} \\
+        BBEH       & 30.0 & 39.0 & ---  & 28.0 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -324,22 +323,22 @@ Self-RePrompt 经多任务 LoRA 微调（v3）后，在三个训练集内数据�
 结果分析如下：
 
 \begin{itemize}
-    \item \textbf{GSM8K}：B4（95.0\%）最高，较 B0（78.0\%）提升 +17.0 个百分点；B1（74.5\%）略低于 B0，说明零样本策略句未必有利于该 Base 在数值题上的精确推理。已含教师 \texttt{sr\_prompt} 的 B2（51.0\%）显著低于 B0/B4，表明将构造阶段提示硬拼进用户消息并不等价于端到端 SRP 行为，甚至可能对当前 Base 产生干扰；SRP-LoRA 仍通过习得的格式与参数更新带来明显提升。
-    \item \textbf{HotpotQA}：B0（26.0\%）整体仍受字符串匹配评测口径影响。B4（39.0\%）高于 B1（32.0\%）与 B2（28.0\%），较 B0 提升 +13.0 个百分点，说明 Self-RePrompt 在该设定下能优于单轮 CoT 句与 Oracle 文本提示的简单注入。
-    \item \textbf{OpenBookQA}：B4（93.5\%）明显高于 B0（43.5\%）与 B2（48.5\%），亦高于 B1（75.0\%），在四选一设置下 SRP-LoRA 收益最为突出。B0 与文献常见全测试集结果不可直接对比（此处为训练子集抽样与评测脚本口径下的相对基线）。
-    \item \textbf{SuperGPQA / MMLU-Pro}：B4 相对 B0 分别 +10.0 与 +11.5 个百分点，表明在未参与训练的 MCQ 推理分布上仍有一定迁移；CoT 句（B1）在 MMLU-Pro 上略优于 B0，但均低于 B4。
-    \item \textbf{BBEH}：B4（28.0\%）略低于 B0（30.0\%）及 B1（39.0\%），提示在高度异构的综合推理混合基准上，当前多任务 SRP 训练可能存在负迁移或容量限制，有待针对性数据或任务加权改进。
+    \item \textbf{GSM8K}：\texttt{SRP}（95.0\%）最高，较 \texttt{qwen3\_8b}（78.0\%）提升 +17.0 个百分点；\texttt{COT}（74.5\%）略低于 \texttt{qwen3\_8b}，说明零样本策略句未必有利于该 Base 在数值题上的精确推理。已含教师 \texttt{sr\_prompt} 的 \texttt{oracle\_srp}（51.0\%）显著低于 \texttt{qwen3\_8b} 与 \texttt{SRP}，表明将构造阶段提示硬拼进用户消息并不等价于端到端 SRP 行为，甚至可能对当前 Base 产生干扰；SRP-LoRA 仍通过习得的格式与参数更新带来明显提升。
+    \item \textbf{HotpotQA}：\texttt{qwen3\_8b}（26.0\%）整体仍受字符串匹配评测口径影响。\texttt{SRP}（39.0\%）高于 \texttt{COT}（32.0\%）与 \texttt{oracle\_srp}（28.0\%），较 \texttt{qwen3\_8b} 提升 +13.0 个百分点，说明 Self-RePrompt 在该设定下能优于单轮 CoT 句与 Oracle 文本提示的简单注入。
+    \item \textbf{OpenBookQA}：\texttt{SRP}（93.5\%）明显高于 \texttt{qwen3\_8b}（43.5\%）与 \texttt{oracle\_srp}（48.5\%），亦高于 \texttt{COT}（75.0\%），在四选一设置下 SRP-LoRA 收益最为突出。\texttt{qwen3\_8b} 与文献常见全测试集结果不可直接对比（此处为训练子集抽样与评测脚本口径下的相对基线）。
+    \item \textbf{SuperGPQA / MMLU-Pro}：\texttt{SRP} 相对 \texttt{qwen3\_8b} 分别 +10.0 与 +11.5 个百分点，表明在未参与训练的 MCQ 推理分布上仍有一定迁移；CoT 句（\texttt{COT}）在 MMLU-Pro 上略优于 \texttt{qwen3\_8b}，但均低于 \texttt{SRP}。
+    \item \textbf{BBEH}：\texttt{SRP}（28.0\%）略低于 \texttt{qwen3\_8b}（30.0\%）及 \texttt{COT}（39.0\%），提示在高度异构的综合推理混合基准上，当前多任务 SRP 训练可能存在负迁移或容量限制，有待针对性数据或任务加权改进。
 \end{itemize}
 
-表~\ref{tab:student_acc} 进一步对比了 B0 与 B4 的准确率，并计算了 Self-RePrompt 带来的提升幅度。
+表~\ref{tab:student_acc} 进一步对比了 \texttt{qwen3\_8b} 与 \texttt{SRP} 的准确率，并计算了 Self-RePrompt 带来的提升幅度。
 
 \begin{table}[htbp]
     \centering
-    \caption{Self-RePrompt（B4）vs.\ Base（B0）准确率对比（\%，200 条/集）}
+    \caption{Self-RePrompt（\texttt{SRP}）vs.\ 裸基座（\texttt{qwen3\_8b}）准确率对比（\%，200 条/集）}
     \label{tab:student_acc}
     \begin{tabular}{lccc}
         \toprule
-        \textbf{数据集} & \textbf{B0（Base）} & \textbf{B4（Ours）} & \textbf{$\Delta$} \\
+        \textbf{数据集} & \textbf{\texttt{qwen3\_8b}} & \textbf{\texttt{SRP}} & \textbf{$\Delta$} \\
         \midrule
         GSM8K      & 78.0\% & 95.0\% & +17.0\% \\
         HotpotQA   & 26.0\% & 39.0\% & +13.0\% \\
@@ -359,7 +358,7 @@ Self-RePrompt 经多任务 LoRA 微调（v3）后，在三个训练集内数据�
 
 \begin{table}[htbp]
     \centering
-    \caption{Self-RePrompt 内部提示段触发率（对 B4 解码输出解析 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>}；\textbf{注意}：当前 \texttt{eval\_baselines.py} 汇总行未打印该统计，表中为此前同模型与同解码设置下、各 200 条样本的解析记录，与表~\ref{tab:baseline_full}的日志批次不完全相同，仅作格式稳定性佐证。）}
+    \caption{Self-RePrompt 内部提示段触发率（对 \texttt{SRP} 解码输出解析 \texttt{<SRP\_START>}\textellipsis\texttt{<SRP\_END>}；\textbf{注意}：当前 \texttt{eval\_baselines.py} 汇总行未打印该统计，表中为此前同模型与同解码设置下、各 200 条样本的解析记录，与表~\ref{tab:baseline_full}的日志批次不完全相同，仅作格式稳定性佐证。）}
     \label{tab:trigger_rate}
     \begin{tabular}{lcc}
         \toprule
@@ -379,34 +378,33 @@ Self-RePrompt 经多任务 LoRA 微调（v3）后，在三个训练集内数据�
 为验证 Self-RePrompt 的跨任务迁移能力，本文在 MuSiQue 数据集上进行分布外（OOD）评测。
 MuSiQue 未参与任何训练，每题包含 20 个段落上下文（含 2--4 个支撑段落），
 要求进行多步链式推理，与训练数据中的任务形式均不完全一致。
-表~\ref{tab:musique} 给出了 B0、B1、B3、B4 在 MuSiQue 上的准确率（100 条样本）。
+表~\ref{tab:musique} 给出了 \texttt{qwen3\_8b}、\texttt{COT}、\texttt{SRP} 在 MuSiQue 上的准确率（100 条样本）。
 
 \begin{table}[htbp]
     \centering
     \caption{MuSiQue OOD 泛化测试准确率（样本数=100）}
     \label{tab:musique}
-    \begin{tabular}{lccccc}
+    \begin{tabular}{lcccc}
         \toprule
-        \textbf{数据集} & \textbf{B0} & \textbf{B1} & \textbf{B2} & \textbf{B3} & \textbf{B4（Ours）} \\
+        \textbf{数据集} & \textbf{\texttt{qwen3\_8b}} & \textbf{\texttt{COT}} & \textbf{\texttt{oracle\_srp}} & \textbf{\texttt{SRP}} \\
         \midrule
-        MuSiQue & 79.0\% & 74.0\% & --- & 79.0\% & \textbf{89.0\%} \\
+        MuSiQue & 79.0\% & 74.0\% & --- & \textbf{89.0\%} \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-B4 在 MuSiQue 上达到 89.0\%，较基线 B0（79.0\%）提升 \textbf{+10.0\%}，
-较 CoT 提示 B1（74.0\%）提升 \textbf{+15.0\%}，是四个测试集中提升幅度最大的。
+\texttt{SRP} 在 MuSiQue 上达到 89.0\%，较基线 \texttt{qwen3\_8b}（79.0\%）提升 \textbf{+10.0 个百分点}，
+较 \texttt{COT}（74.0\%）提升 \textbf{+15.0 个百分点}。
 主要发现如下：
 
 \begin{itemize}
     \item \textbf{强泛化能力}：Self-RePrompt 在未见过的多跳阅读理解任务上仍取得显著提升，
     说明 LoRA 微调不仅使模型习得了特定格式，更学到了"在回答前生成凝练推理策略"这一通用推理习惯，
     并能迁移到新任务类型。
-    \item \textbf{CoT 提示适得其反}：B1（74.0\%）低于 B0（79.0\%），说明在需要从给定段落中
+    \item \textbf{CoT 提示适得其反}：\texttt{COT}（74.0\%）低于 \texttt{qwen3\_8b}（79.0\%），说明在需要从给定段落中
     精确抽取答案的阅读理解任务上，通用策略提示可能导致模型偏离原文进行自由发挥，反而增加误判。
-    \item \textbf{B3 = B0 验证正确性}：两者均为 79.0\%，再次确认 disable\_adapter 机制的工程正确性。
-    \item \textbf{B2 不可用}：MuSiQue 原始数据无 srp\_prompt 字段，Oracle 基线无法获取，
-    进一步凸显了 SRP-LoRA（B4）无需 Oracle 辅助即可实现大幅提升的优势。
+    \item \textbf{\texttt{oracle\_srp} 不可用}：MuSiQue 原始数据无 srp\_prompt 字段，Oracle 基线无法获取，
+    进一步凸显了 SRP-LoRA（\texttt{SRP}）无需 Oracle 辅助即可实现大幅提升的优势。
 \end{itemize}
 
 \section{消融与讨论}
@@ -418,7 +416,7 @@ B4 在 MuSiQue 上达到 89.0\%，较基线 B0（79.0\%）提升 \textbf{+10.0\%
     \item \textbf{misleading 过滤的作用}：数据构造阶段四象限分析显示，misleading 样本占比约 4--6\%；
     训练时保留此类样本会使模型学到"自重写提示降低准确率"的反向关联，
     因此在训练数据中过滤 misleading 是保证 Self-RePrompt 有效性的关键步骤。
-    \item \textbf{HotpotQA 绝对准确率仍偏中等}：尽管 B4 较 B0 已有 +13.0 个百分点增益，HotpotQA 在训练集中占比最低（1{,}887 条，约 13.7\%），
+    \item \textbf{HotpotQA 绝对准确率仍偏中等}：尽管 \texttt{SRP} 较 \texttt{qwen3\_8b} 已有 +13.0 个百分点增益，HotpotQA 在训练集中占比最低（1{,}887 条，约 13.7\%），
     且字符串包含匹配使绝对数值偏保守，内部提示段质量与答案后处理仍有改进空间。
     后续可通过增加 HotpotQA 训练样本或改进答案匹配策略进一步优化。
     \item \textbf{内部提示段的可解释性}：Self-RePrompt 的内部段可直接阅读，
@@ -429,17 +427,17 @@ B4 在 MuSiQue 上达到 89.0\%，较基线 B0（79.0\%）提升 \textbf{+10.0\%
 
 \section{本章小结}
 
-本章给出了实验设置、数据集与基线定义。表~\ref{tab:dataset}汇总了训练数据规模，表~\ref{tab:teacher_gsm8k}与表~\ref{tab:quadrant}展示了数据构造阶段的准确率及四象限分布，表~\ref{tab:baseline_full}与表~\ref{tab:student_acc}给出了 B0--B4 全面基线对比及 Self-RePrompt 提升幅度（含 SuperGPQA、MMLU-Pro、BBEH 三路补充评测），表~\ref{tab:trigger_rate}对内部提示段格式触发率作辅助说明，表~\ref{tab:musique}验证了 Self-RePrompt 在 OOD 数据集 MuSiQue 上的泛化性能。综合来看，SRP-LoRA 在 GSM8K、HotpotQA、OpenBookQA 及两个 MCQ 推理基准上均优于 Base，但在 BBEH 上略低于 Base，说明广义混合推理场景仍有改进空间；MuSiQue 结果保持独立 OOD 叙述。
+本章给出了实验设置、数据集与基线定义。表~\ref{tab:dataset}汇总了训练数据规模，表~\ref{tab:teacher_gsm8k}与表~\ref{tab:quadrant}展示了数据构造阶段的准确率及四象限分布，表~\ref{tab:baseline_full}与表~\ref{tab:student_acc}给出了 \texttt{qwen3\_8b}、\texttt{COT}、\texttt{oracle\_srp}、\texttt{SRP} 全面基线对比及 Self-RePrompt 提升幅度（含 SuperGPQA、MMLU-Pro、BBEH 三路补充评测），表~\ref{tab:trigger_rate}对内部提示段格式触发率作辅助说明，表~\ref{tab:musique}验证了 Self-RePrompt 在 OOD 数据集 MuSiQue 上的泛化性能。综合来看，SRP-LoRA 在 GSM8K、HotpotQA、OpenBookQA 及两个 MCQ 推理基准上均优于裸基座，但在 BBEH 上略低于 \texttt{qwen3\_8b}，说明广义混合推理场景仍有改进空间；MuSiQue 结果保持独立 OOD 叙述。
 
 \chapter{总结与展望}
 
 \section{本文研究总结}
 
-本文围绕"如何使大语言模型在不依赖外部提示优化器的前提下，自动生成对自身推理有帮助的内部提示段"这一问题，提出了 Self-RePrompt 方法。该方法通过在输出序列中引入 \texttt{<SRP\_START>} 与 \texttt{<SRP\_END>} 两个特殊 token，使模型先生成内部提示段，再基于该提示完成最终作答。本文进一步设计了面向数据构造模型的数据生成流程，自动生成"用户问题 $\rightarrow$ 内部提示段 $\rightarrow$ 理想回答"的三元组，并利用四象限标签过滤误导性样本；随后在 Qwen3-8B 上采用 LoRA 实现参数高效微调，使 Self-RePrompt 学得相应行为模式。在 \texttt{all\_benchmarks} 设定下（每集 200 条），实验观测到 GSM8K（B0$\to$B4：78.0\%$\to$95.0\%）、HotpotQA（26.0\%$\to$39.0\%）、OpenBookQA（43.5\%$\to$93.5\%）及 SuperGPQA、MMLU-Pro 上的明显提升，而 BBEH 上 B4 略低于 B0，提示方法在异构综合基准上仍存在局限；开发阶段解析统计显示内部提示段触发率约 95\%（见表~\ref{tab:trigger_rate}说明）。MuSiQue OOD 评测见表~\ref{tab:musique}。总体而言，本文为单模型场景下的自引导推理提供了一种实现简单、训练友好且具有一定可解释性的技术方案。
+本文围绕"如何使大语言模型在不依赖外部提示优化器的前提下，自动生成对自身推理有帮助的内部提示段"这一问题，提出了 Self-RePrompt 方法。该方法通过在输出序列中引入 \texttt{<SRP\_START>} 与 \texttt{<SRP\_END>} 两个特殊 token，使模型先生成内部提示段，再基于该提示完成最终作答。本文进一步设计了面向数据构造模型的数据生成流程，自动生成"用户问题 $\rightarrow$ 内部提示段 $\rightarrow$ 理想回答"的三元组，并利用四象限标签过滤误导性样本；随后在 Qwen3-8B 上采用 LoRA 实现参数高效微调，使 Self-RePrompt 学得相应行为模式。在 \texttt{all\_benchmarks} 设定下（每集 200 条），实验观测到 GSM8K（\texttt{qwen3\_8b}$\to$\texttt{SRP}：78.0\%$\to$95.0\%）、HotpotQA（26.0\%$\to$39.0\%）、OpenBookQA（43.5\%$\to$93.5\%）及 SuperGPQA、MMLU-Pro 上的明显提升，而 BBEH 上 \texttt{SRP} 略低于 \texttt{qwen3\_8b}，提示方法在异构综合基准上仍存在局限；开发阶段解析统计显示内部提示段触发率约 95\%（见表~\ref{tab:trigger_rate}说明）。MuSiQue OOD 评测见表~\ref{tab:musique}。总体而言，本文为单模型场景下的自引导推理提供了一种实现简单、训练友好且具有一定可解释性的技术方案。
 
 \section{存在的不足}
 
-（1）数据构造流程依赖外部 API（如 DeepSeek），成本与可控性仍需权衡。（2）HotpotQA 上的准确率（表~\ref{tab:baseline_full} 中 B4=39.0\%）仍受字符串答案匹配策略影响，绝对数值不宜与官方 Hotpot 排行榜直接对比，更精细的答案归一化有待研究。（3）消融实验尚未系统比较不同过滤策略、不同 LoRA rank 及单任务 vs.\ 多任务训练等变量的影响，后续应补充受控对比。（4）内部提示段的质量与可解释性尚未做系统性的定性评估与人工分析。（5）BBEH 上出现 B4 略低于 B0 的现象，说明在异构综合推理基准上仍需任务对齐或训练调整。（6）Self-RePrompt 在 MATH 等更难数学数据集以及 PopQA 等知识问答数据集上的表现，以及与 Self-RAG、Reflexion 等方法的系统性对比可进一步展开。
+（1）数据构造流程依赖外部 API（如 DeepSeek），成本与可控性仍需权衡。（2）HotpotQA 上的准确率（表~\ref{tab:baseline_full} 中 \texttt{SRP}=39.0\%）仍受字符串答案匹配策略影响，绝对数值不宜与官方 Hotpot 排行榜直接对比，更精细的答案归一化有待研究。（3）消融实验尚未系统比较不同过滤策略、不同 LoRA rank 及单任务 vs.\ 多任务训练等变量的影响，后续应补充受控对比。（4）内部提示段的质量与可解释性尚未做系统性的定性评估与人工分析。（5）BBEH 上出现 \texttt{SRP} 略低于 \texttt{qwen3\_8b} 的现象，说明在异构综合推理基准上仍需任务对齐或训练调整。（6）Self-RePrompt 在 MATH 等更难数学数据集以及 PopQA 等知识问答数据集上的表现，以及与 Self-RAG、Reflexion 等方法的系统性对比可进一步展开。
 
 \section{未来研究方向展望}
 
